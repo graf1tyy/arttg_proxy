@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -24,73 +23,95 @@ def _read_latest_stats() -> dict[str, str]:
     return {}
 
 
-def _fix_window_controls(window) -> None:
-    """Make the existing frameless title-bar buttons visibly glyph-based."""
-    try:
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QAbstractButton
-
-        candidates = []
-        width = max(300, window.width())
-        for b in window.findChildren(QAbstractButton):
-            g = b.geometry()
-            if g.width() < 18 or g.height() < 18:
-                continue
-            if g.y() > 72 or g.x() < max(0, width - 240):
-                continue
-            candidates.append(b)
-
-        # The right-most three title-bar buttons are minimize/maximize/close.
-        candidates.sort(key=lambda b: b.geometry().x())
-        if len(candidates) >= 3:
-            buttons = candidates[-3:]
-            glyphs = ("−", "□", "×")
-            tips = ("Свернуть", "Развернуть", "Закрыть")
-            for b, glyph, tip in zip(buttons, glyphs, tips):
-                try:
-                    b.setIcon(b.style().standardIcon(
-                        b.style().SP_TitleBarMinButton if glyph == "−"
-                        else b.style().SP_TitleBarMaxButton if glyph == "□"
-                        else b.style().SP_TitleBarCloseButton
-                    ))
-                except Exception:
-                    pass
-                # Keep text as a guaranteed fallback if the icon is blank/missing.
-                b.setText(glyph)
-                b.setToolButtonStyle(Qt.ToolButtonTextOnly)
-                b.setMinimumSize(40, 32)
-                b.setMaximumHeight(36)
-                b.setStyleSheet(
-                    "QAbstractButton { border: 0; background: transparent; "
-                    "color: #ffffff; font-size: 18px; font-weight: 500; "
-                    "padding: 0; margin: 0; }"
-                    "QAbstractButton:hover { background: rgba(255,255,255,0.10); }"
-                )
-                b.setToolTip(tip)
-                b.setAccessibleName(tip)
-    except Exception:
-        pass
-
-
-def _tune_engine_config(config) -> None:
-    """Prefer WS for media and use plaintext CF fallback where TLS is blocked."""
-    for name, value in (
-        ("h2_enabled", False),
-        ("cfproxy_h2_media", False),
-        ("no_h2", True),
-        ("disable_secure", True),
-        ("no_secure", True),
-        ("pool_size", 8),
-    ):
+def _set_no_secure(config) -> None:
+    """Prefer HTTP/CF port 80 fallback for networks that reset CF TLS."""
+    for name in ("no_secure", "disable_secure"):
         if hasattr(config, name):
             try:
-                setattr(config, name, value)
+                setattr(config, name, True)
             except Exception:
                 pass
 
 
+def _fix_window_controls(window) -> None:
+    """Make custom title-bar controls visibly show — / □ / × without replacing their actions."""
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QAbstractButton
+
+        all_buttons = list(window.findChildren(QAbstractButton))
+        if not all_buttons:
+            return
+
+        def area(b):
+            g = b.geometry()
+            return g.width() * g.height()
+
+        def top_button(b):
+            g = b.geometry()
+            return g.top() < max(96, int(window.height() * 0.12)) and g.width() >= 18 and g.height() >= 18
+
+        candidates = [b for b in all_buttons if top_button(b)]
+
+        # Prefer buttons whose object name / tooltip already identifies their window action.
+        named = []
+        for b in candidates:
+            s = " ".join([
+                str(b.objectName() or ""),
+                str(b.toolTip() or ""),
+                str(b.accessibleName() or ""),
+            ]).lower()
+            if any(k in s for k in ("minimiz", "maximiz", "restor", "close", "закры", "сверн", "развер")):
+                named.append(b)
+
+        def xkey(b):
+            return b.geometry().x()
+
+        named = sorted(named, key=xkey)
+        if len(named) >= 3:
+            chosen = named[-3:]
+        else:
+            # Frameless title bars commonly contain exactly three right-side buttons.
+            # Keep only the rightmost controls so unrelated top-left toolbar buttons are untouched.
+            chosen = sorted(candidates, key=xkey)[-3:] if len(candidates) >= 3 else []
+
+        if len(chosen) != 3:
+            return
+
+        glyphs = ("—", "□", "×")
+        tips = ("Свернуть", "Развернуть", "Закрыть")
+        for b, glyph, tip in zip(chosen, glyphs, tips):
+            b.setText(glyph)
+            try:
+                b.setIcon(b.style().standardIcon(
+                    b.style().SP_TitleBarMinButton if glyph == "—"
+                    else b.style().SP_TitleBarMaxButton if glyph == "□"
+                    else b.style().SP_TitleBarCloseButton
+                ))
+            except Exception:
+                # Text glyph is the reliable fallback for custom title bars.
+                pass
+            try:
+                b.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            except Exception:
+                pass
+            b.setMinimumSize(36, 30)
+            b.setStyleSheet(
+                "QAbstractButton { border: 0; background: transparent; "
+                "color: #ffffff; font-size: 18px; font-weight: 500; "
+                "padding: 0; margin: 0; }"
+                "QAbstractButton:hover { background: rgba(255,255,255,0.08); }"
+            )
+            b.setToolTip(tip)
+            b.setAccessibleName(tip)
+            b.setVisible(True)
+            b.raise_()
+    except Exception:
+        pass
+
+
 def install_ui_patch() -> None:
-    """ART runtime UI/transport patch."""
+    """Fix live dashboard telemetry, title-bar controls and CF fallback defaults."""
     try:
         from art.ui import MainWindow
     except Exception:
@@ -106,7 +127,7 @@ def install_ui_patch() -> None:
     def init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         try:
-            _tune_engine_config(self.config)
+            _set_no_secure(self.config)
         except Exception:
             pass
         _fix_window_controls(self)
