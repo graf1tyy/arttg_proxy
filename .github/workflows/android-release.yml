@@ -71,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="mobile-v0.1.0"
-          APK="ART-Kotlin/app/build/outputs/apk/release/app-release.apk"
+          APK="ART-Mobile-v0.1.0.apk"
           CHECKSUM="$APK.sha256"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||             gh release create "$TAG" "$APK" "$CHECKSUM"               --repo "$GITHUB_REPOSITORY"               --title "ART Mobile v0.1.0 (Android preview)"               --prerelease               --notes "Первая Android preview-сборка. Автоматически загружает и проверяет публичные MTProto-прокси, исключает явно рекламные прокси и передаёт выбранный сервер в Telegram. Это не системный VPN: другие приложения телефона пока не туннелируются."
           gh release upload "$TAG" "$APK" "$CHECKSUM" --repo "$GITHUB_REPOSITORY" --clobber
