@@ -461,7 +461,9 @@ class MainActivity : Activity() {
     private fun fullWidth() = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         dp(56),
-    )(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    )
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
         private val MUTED = Color.rgb(151, 165, 185)
