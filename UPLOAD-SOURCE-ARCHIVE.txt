@@ -1,0 +1,20 @@
+ART Desktop 2.0.1 — Windows build
+
+The Windows build workflow is already configured at .github/workflows/build-windows.yml.
+
+One binary source archive still needs to be uploaded to the repository root:
+ART-Desktop-v2.0.1-source.zip
+
+Upload it using:
+https://github.com/graf1tyy/arttg_proxy/upload/main
+
+The matching SHA-256 sidecar is already committed. Once the ZIP is committed to main, GitHub Actions automatically:
+- verifies the archive hash;
+- installs the pinned Flowseal v1.11.4 transport core;
+- compiles ART and runs its 32 unit tests;
+- runs a Qt window smoke test;
+- builds ART-Engine.exe and ART.exe on Windows;
+- runs frozen executable smoke tests;
+- uploads ART-Desktop-Windows-x64 as a downloadable workflow artifact.
+
+A green workflow proves the packaged app launches on the Windows CI runner. It does not prove Telegram works through the user's ISP; that last check must be done on the target computer.
