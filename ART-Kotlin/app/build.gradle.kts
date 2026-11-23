@@ -28,6 +28,10 @@ android {
     sourceSets.getByName("main").java.srcDir("../core/src/commonMain/kotlin")
 }
 
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+
 kotlin {
     jvmToolchain(17)
 }
