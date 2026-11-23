@@ -1,14 +1,20 @@
 name: Build ART for Windows
-# Build trigger: main
-# v2.0.3 adds system-tray mode, Windows logon startup and kill-on-close engine cleanup.
-# Release build is intentionally blocked until tray, autostart and process-tree smoke tests pass.
-# Release is published by a commit titled: release: ART Desktop v2.0.2
-# Existing v2.0.2 release is reused for asset uploads on retry.
+# ART Desktop release pipeline. Kotlin changes are built by kotlin-core.yml instead.
+# v2.0.4 includes system-tray mode, Windows logon startup and engine process-tree cleanup.
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "ART-Desktop-v2.0.1/**"
+      - "ART-Desktop-v2.0.1-source.zip"
+      - "ART-Desktop-v2.0.1-source.zip.sha256"
+      - ".github/workflows/build-windows.yml"
+
+concurrency:
+  group: art-windows-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -231,18 +237,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish ART Desktop v2.0.3 Release
-        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.3') }}"
+      - name: Publish ART Desktop v2.0.4 Release
+        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.4') }}"
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = 'v2.0.3'
+          $version = 'v2.0.4'
           gh release view $version --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $version --repo $env:GITHUB_REPOSITORY --title 'ART Desktop v2.0.3' --notes 'Единый ART.exe для Windows x64. Добавлены сворачивание в системный трей, автозапуск с Windows в фоне и надёжное завершение дерева процессов движка. Крестик скрывает окно в трей; пункт «Выход» завершает программу и локальный мост.'
-            if ($LASTEXITCODE -ne 0) { throw 'Could not create GitHub release v2.0.3.' }
+            gh release create $version --repo $env:GITHUB_REPOSITORY --title 'ART Desktop v2.0.4' --notes 'Единый ART.exe для Windows x64. Проверены автозапуск с Windows в фоне, сворачивание в системный трей, выход с завершением дерева процессов, встроенный транспортный движок и запуск самого EXE.'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create GitHub release v2.0.4.' }
           }
           $release = gh release view $version --repo $env:GITHUB_REPOSITORY --json url,assets | ConvertFrom-Json
           $existing = @($release.assets | ForEach-Object { $_.name })
