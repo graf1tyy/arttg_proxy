@@ -66,7 +66,7 @@ def _current_start_reports_listener(window, host: str, port: int) -> bool:
         offset = int(getattr(window, "_art_engine_log_offset", 0))
         tail = raw[offset:]
         pattern = re.compile(
-            rf"Listening on\\s+{re.escape(host)}:{int(port)}(?:\\s|$)",
+            rf"Listening on\s+{re.escape(host)}:{int(port)}(?:\s|$)",
             re.IGNORECASE,
         )
         return any(pattern.search(line) for line in tail.splitlines())
