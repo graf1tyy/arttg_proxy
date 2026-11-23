@@ -5,6 +5,90 @@ import re
 import subprocess
 from pathlib import Path
 
+
+def _make_titlebar_icon(kind: str):
+    """Draw crisp native-looking title-bar icons without font glyph dependencies."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+
+    pixmap = QPixmap(18, 18)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(QColor("#F2F4F7"))
+    pen.setWidthF(1.6)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    if kind == "minimize":
+        painter.drawLine(3, 9, 15, 9)
+    elif kind == "maximize":
+        painter.drawRect(4, 4, 10, 10)
+    elif kind == "restore":
+        painter.drawRect(3, 5, 9, 9)
+        painter.drawLine(6, 4, 6, 3)
+        painter.drawLine(6, 3, 14, 3)
+        painter.drawLine(14, 3, 14, 11)
+        painter.drawLine(14, 11, 13, 11)
+    elif kind == "close":
+        painter.drawLine(4, 4, 14, 14)
+        painter.drawLine(14, 4, 4, 14)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _apply_titlebar_icons(window) -> bool:
+    """Style only the three direct buttons inside the dedicated title-bar frame."""
+    try:
+        from PySide6.QtCore import Qt, QSize
+        from PySide6.QtWidgets import QFrame, QPushButton
+
+        titlebar = window.findChild(QFrame, "titlebar")
+        if titlebar is None:
+            return False
+        buttons = titlebar.findChildren(
+            QPushButton, options=Qt.FindChildOption.FindDirectChildrenOnly
+        )
+        buttons.sort(key=lambda button: button.geometry().x())
+        if len(buttons) != 3:
+            return False
+
+        maximize_kind = "restore" if window.isMaximized() else "maximize"
+        definitions = (
+            ("window_minimize", "minimize", "Свернуть", False),
+            ("window_maximize", maximize_kind, "Восстановить" if window.isMaximized() else "Развернуть", False),
+            ("window_close", "close", "Закрыть", True),
+        )
+        for button, (object_name, icon_kind, tip, is_close) in zip(buttons, definitions):
+            button.setObjectName(object_name)
+            button.setText("")
+            button.setIcon(_make_titlebar_icon(icon_kind))
+            button.setIconSize(QSize(14, 14))
+            button.setFixedSize(30, 28)
+            button.setToolTip(tip)
+            button.setAccessibleName(tip)
+            button.setVisible(True)
+            button.setEnabled(True)
+            if is_close:
+                button.setStyleSheet(
+                    "QPushButton { background:#20242d; border:1px solid #303744; "
+                    "border-radius:9px; padding:0; }"
+                    "QPushButton:hover { background:#5a252b; border:1px solid #a64750; }"
+                    "QPushButton:pressed { background:#3d1c21; }"
+                )
+            else:
+                button.setStyleSheet(
+                    "QPushButton { background:#20242d; border:1px solid #303744; "
+                    "border-radius:9px; padding:0; }"
+                    "QPushButton:hover { background:#323945; border:1px solid #586273; }"
+                    "QPushButton:pressed { background:#171b22; }"
+                )
+        return True
+    except Exception:
+        return False
+
 _STATS_RE = re.compile(r"stats:\s+(?P<body>.+)$")
 _PAIR_RE = re.compile(r"(?P<key>[A-Za-z_]+)=(?P<value>[^\s]+)")
 
@@ -89,6 +173,7 @@ def install_ui_patch() -> None:
     original_poll_engine = MainWindow._poll_engine
     original_start_engine = MainWindow.start_engine
     original_stop_engine = MainWindow.stop_engine
+    original_toggle_maximize = MainWindow._toggle_maximize
 
     # Patch the engine argument builder at its defining module: start_engine()
     # resolves this global when it builds the one-shot stdin configuration.
@@ -137,6 +222,11 @@ def install_ui_patch() -> None:
         except Exception:
             pass
         self._art_engine_log_offset = 0
+        _apply_titlebar_icons(self)
+
+    def toggle_maximize(self):
+        original_toggle_maximize(self)
+        _apply_titlebar_icons(self)
 
     def start_engine(self):
         try:
@@ -206,6 +296,7 @@ def install_ui_patch() -> None:
     MainWindow.__init__ = init
     MainWindow.start_engine = start_engine
     MainWindow.stop_engine = stop_engine
+    MainWindow._toggle_maximize = toggle_maximize
     MainWindow._apply_state = apply_state
     MainWindow._poll_engine = poll_engine
     MainWindow._art_runtime_patch = True
