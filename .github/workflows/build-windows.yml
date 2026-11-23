@@ -1,5 +1,6 @@
 name: Build ART for Windows
 # Build trigger: main
+# v2.0.3 adds system-tray mode, Windows logon startup and kill-on-close engine cleanup.
 # Release is published by a commit titled: release: ART Desktop v2.0.2
 # Existing v2.0.2 release is reused for asset uploads on retry.
 
