@@ -85,6 +85,9 @@ smoke_function = '''def _bundle_smoke_test() -> int:
     process = None
     try:
         process = start_engine(config, log_path)
+        if os.name == "nt" and not getattr(process, "_art_job_handle", None):
+            print("BUNDLE_SMOKE_FAIL: Windows engine process tree could not be assigned to a kill-on-close Job Object", file=sys.stderr)
+            return 46
         deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
             exit_code = process.poll()
