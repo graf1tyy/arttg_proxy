@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows-x64:
@@ -28,6 +28,7 @@ jobs:
           Expand-Archive -Path 'ART-Desktop-v2.0.1-source.zip' -DestinationPath source -Force
           if (!(Test-Path 'source/ART-Desktop-v2.0.1/app.py')) { throw 'Source archive layout is invalid.' }
           Copy-Item 'ART-Desktop-v2.0.1/art/ui_patch.py' 'source/ART-Desktop-v2.0.1/art/ui_patch.py' -Force
+          Copy-Item 'ART-Desktop-v2.0.1/onefile_patch.py' 'source/ART-Desktop-v2.0.1/onefile_patch.py' -Force
           $appPath = 'source/ART-Desktop-v2.0.1/app.py'
           $appSource = Get-Content $appPath -Raw
           $anchor = 'from art.ui import MainWindow'
@@ -82,7 +83,9 @@ jobs:
           sys.argv = [sys.argv[0], *args]
           main()
           '@ | Set-Content engine_entry.py -Encoding utf8
-          python -m compileall -q app.py engine_entry.py art tests
+          python onefile_patch.py
+          if ($LASTEXITCODE -ne 0) { throw 'Single-file source patch failed.' }
+          python -m compileall -q app.py engine_entry.py art tests onefile_patch.py
       - name: Run ART tests
         working-directory: source/ART-Desktop-v2.0.1
         run: python -m unittest discover -s tests -v
@@ -174,39 +177,59 @@ jobs:
           '["--help"]' | & build/engine-dist/ART-Engine.exe
           if ($LASTEXITCODE -ne 0) { throw 'Packaged engine smoke test failed.' }
 
-      - name: Build ART desktop app
+      - name: Build and smoke test single-file ART
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name ART --icon (Join-Path $PWD 'assets/art.ico') --add-data "$(Join-Path $PWD 'assets');assets" --distpath dist --workpath build/gui --specpath build/gui app.py
-          if ($LASTEXITCODE -ne 0) { throw 'ART desktop PyInstaller build failed.' }
-          New-Item -ItemType Directory -Force -Path dist/ART/engine | Out-Null
-          Copy-Item build/engine-dist/ART-Engine.exe dist/ART/engine/ART-Engine.exe -Force
-          Copy-Item THIRD-PARTY-LICENSE.txt dist/ART/THIRD-PARTY-LICENSE.txt -Force
-          Copy-Item START-HERE.txt dist/ART/START-HERE.txt -Force
-          if (!(Test-Path 'dist/ART/ART.exe')) { throw 'ART.exe missing from PyInstaller output.' }
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name ART --icon (Join-Path $PWD 'assets/art.ico') --add-data "$(Join-Path $PWD 'assets');assets" --add-data "$(Join-Path $PWD 'build/engine-dist/ART-Engine.exe');engine" --add-data "$(Join-Path $PWD 'THIRD-PARTY-LICENSE.txt');licenses" --distpath dist --workpath build/gui --specpath build/gui app.py
+          if ($LASTEXITCODE -ne 0) { throw 'Single-file ART PyInstaller build failed.' }
+          if (!(Test-Path 'dist/ART.exe')) { throw 'Single-file dist/ART.exe missing.' }
           $env:QT_QPA_PLATFORM = 'offscreen'
-          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'art-frozen-smoke'
-          & dist/ART/ART.exe --smoke-test
-          if ($LASTEXITCODE -ne 0) { throw 'Frozen ART.exe smoke test failed.' }
-          $guiHash = (Get-FileHash 'dist/ART/ART.exe' -Algorithm SHA256).Hash
-          $engineHash = (Get-FileHash 'dist/ART/engine/ART-Engine.exe' -Algorithm SHA256).Hash
-          @("ART.exe  $guiHash", "ART-Engine.exe  $engineHash") | Set-Content 'dist/ART/SHA256SUMS.txt' -Encoding ascii
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'art-onefile-smoke'
+          & dist/ART.exe --bundle-smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "Bundled engine smoke test failed with exit code $LASTEXITCODE." }
+          & dist/ART.exe --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "Frozen ART GUI smoke test failed with exit code $LASTEXITCODE." }
+          $guiHash = (Get-FileHash 'dist/ART.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$guiHash  ART.exe" | Set-Content 'dist/ART.exe.sha256' -Encoding ascii
 
-      - name: Package portable build
-        shell: pwsh
-        working-directory: source/ART-Desktop-v2.0.1
-        run: |
-          Compress-Archive -Path 'dist/ART/*' -DestinationPath 'dist/ART-Desktop-Windows-x64.zip' -Force
-          $hash = (Get-FileHash 'dist/ART-Desktop-Windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  ART-Desktop-Windows-x64.zip" | Set-Content 'dist/ART-Desktop-Windows-x64.zip.sha256' -Encoding ascii
-
-      - name: Upload Windows portable artifact
+      - name: Upload single-file Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: ART-Desktop-Windows-x64
+          name: ART-Desktop-Windows-x64-OneFile
           path: |
-            source/ART-Desktop-v2.0.1/dist/ART-Desktop-Windows-x64.zip
-            source/ART-Desktop-v2.0.1/dist/ART-Desktop-Windows-x64.zip.sha256
+            source/ART-Desktop-v2.0.1/dist/ART.exe
+            source/ART-Desktop-v2.0.1/dist/ART.exe.sha256
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release v2.0.2
+        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.2')
+        shell: pwsh
+        working-directory: source/ART-Desktop-v2.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = 'v2.0.2'
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $body = @{
+            tag_name = $version
+            target_commitish = 'main'
+            name = 'ART Desktop v2.0.2'
+            body = "Единый portable EXE для Windows x64.\n\nСкачайте ART.exe и запустите двойным щелчком. Отдельная папка с движком и установка не нужны.\n\nВстроенный тест проверяет, что MTProto-мост запускается из ресурсов самого EXE."
+            draft = $false
+            prerelease = $false
+          } | ConvertTo-Json
+          $api = 'https://api.github.com/repos/graf1tyy/arttg_proxy/releases'
+          $release = Invoke-RestMethod -Uri $api -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+          $uploadRoot = $release.upload_url -replace '\{\?name,label\}$', ''
+          foreach ($assetPath in @('dist/ART.exe', 'dist/ART.exe.sha256')) {
+            $assetName = [uri]::EscapeDataString([IO.Path]::GetFileName($assetPath))
+            $uploadUri = "$uploadRoot?name=$assetName"
+            Invoke-WebRequest -Uri $uploadUri -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $assetPath | Out-Null
+          }
+          Write-Host "Published release: $($release.html_url)"
