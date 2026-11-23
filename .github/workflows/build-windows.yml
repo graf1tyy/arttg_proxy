@@ -204,7 +204,7 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release v2.0.2
-        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.2')
+        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.2') }}"
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         env:
