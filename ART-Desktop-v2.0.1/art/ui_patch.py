@@ -23,8 +23,46 @@ def _read_latest_stats() -> dict[str, str]:
     return {}
 
 
+def _set_no_secure(config) -> None:
+    """Prefer HTTP/CF port 80 fallback for networks that reset CF TLS."""
+    for name in ("no_secure", "disable_secure"):
+        if hasattr(config, name):
+            try:
+                setattr(config, name, True)
+            except Exception:
+                pass
+
+
+def _fix_window_controls(window) -> None:
+    """Restore visible native-style minimize/maximize/close glyphs."""
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QToolButton
+
+        buttons = []
+        for b in window.findChildren(QToolButton):
+            g = b.geometry()
+            if g.width() >= 20 and g.height() >= 20 and g.top() < 70:
+                buttons.append(b)
+        buttons.sort(key=lambda b: b.geometry().x())
+        if len(buttons) >= 3:
+            glyphs = ("—", "□", "×")
+            for b, glyph in zip(buttons[-3:], glyphs):
+                b.setText(glyph)
+                b.setToolButtonStyle(Qt.ToolButtonTextOnly)
+                b.setMinimumSize(36, 30)
+                b.setStyleSheet(
+                    "QToolButton { border: 0; background: transparent; "
+                    "font-size: 18px; font-weight: 500; padding: 0; }"
+                    "QToolButton:hover { background: rgba(255,255,255,0.08); }"
+                )
+                b.setToolTip({"—": "Свернуть", "□": "Развернуть", "×": "Закрыть"}[glyph])
+    except Exception:
+        pass
+
+
 def install_ui_patch() -> None:
-    """Fix runtime telemetry and the active-state dashboard without touching the transport core."""
+    """Fix live dashboard telemetry, title-bar controls and CF fallback defaults."""
     try:
         from art.ui import MainWindow
     except Exception:
@@ -33,11 +71,21 @@ def install_ui_patch() -> None:
     if getattr(MainWindow, "_art_runtime_patch", False):
         return
 
+    original_init = MainWindow.__init__
     original_apply_state = MainWindow._apply_state
     original_poll_engine = MainWindow._poll_engine
 
+    def init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        try:
+            _set_no_secure(self.config)
+        except Exception:
+            pass
+        _fix_window_controls(self)
+
     def apply_state(self, online, headline=None, detail=None):
         original_apply_state(self, online, headline, detail)
+        _fix_window_controls(self)
         if online:
             self.hero_state.setText("Транспорт готов")
             self.hero_desc.setText(
@@ -50,6 +98,7 @@ def install_ui_patch() -> None:
 
     def poll_engine(self):
         original_poll_engine(self)
+        _fix_window_controls(self)
         stats = _read_latest_stats()
         if not stats:
             return
@@ -86,6 +135,7 @@ def install_ui_patch() -> None:
         except Exception:
             pass
 
+    MainWindow.__init__ = init
     MainWindow._apply_state = apply_state
     MainWindow._poll_engine = poll_engine
     MainWindow._art_runtime_patch = True
