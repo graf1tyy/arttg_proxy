@@ -85,7 +85,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --console --name ART-Engine --distpath build/engine-dist --workpath build/engine --specpath build/engine engine_entry.py
           if ($LASTEXITCODE -ne 0) { throw 'ART Engine PyInstaller build failed.' }
-          '["--help"]' | & build/engine-dist/ART-Engine.exe
+          & build/engine-dist/ART-Engine.exe --help
           if ($LASTEXITCODE -ne 0) { throw 'Packaged engine smoke test failed.' }
 
       - name: Build ART desktop app
