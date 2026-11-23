@@ -49,8 +49,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(8, 11, 17)
-        window.navigationBarColor = Color.rgb(8, 11, 17)
+        window.statusBarColor = Color.rgb(8, 8, 9)
+        window.navigationBarColor = Color.rgb(8, 8, 9)
         window.decorView.systemUiVisibility = 0
         buildScreen()
     }
@@ -62,95 +62,132 @@ class MainActivity : Activity() {
 
     private fun buildScreen() {
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(Color.rgb(8, 11, 17))
+            setBackgroundColor(Color.rgb(8, 8, 9))
             isFillViewport = true
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(28), dp(22), dp(30))
+            setPadding(dp(22), dp(24), dp(22), dp(28))
         }
         scroll.addView(root, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
 
-        val brand = label("ART", 34f, Color.WHITE, bold = true)
-        root.addView(brand)
-        root.addView(label("MOBILE", 11f, Color.rgb(143, 161, 184), bold = true).apply {
-            letterSpacing = 0.22f
-        })
-        root.addView(space(12))
-        root.addView(label(
-            "Автоматический подбор\\nлучшего прокси Telegram",
-            23f,
-            Color.rgb(239, 243, 249),
-            bold = true,
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val mark = TextView(this).apply {
+            text = "AR"
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.BLACK)
+            background = rounded(Color.WHITE, 14)
+        }
+        header.addView(mark, LinearLayout.LayoutParams(dp(46), dp(46)))
+
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+            addView(label("ARTproxy", 21f, Color.WHITE, bold = true))
+            addView(label("SMART TELEGRAM ROUTE", 9f, Color.rgb(130, 130, 136), bold = true).apply {
+                letterSpacing = 0.13f
+            })
+        }
+        header.addView(brand, LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
         ))
+        header.addView(label("PREVIEW", 9f, Color.rgb(155, 155, 160), bold = true).apply {
+            letterSpacing = 0.10f
+            background = rounded(Color.rgb(28, 28, 31), 30)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+        })
+        root.addView(header)
+
+        root.addView(space(34))
+        root.addView(label("ПОДКЛЮЧЕНИЕ", 10f, Color.rgb(155, 155, 160), bold = true).apply {
+            letterSpacing = 0.18f
+        })
+        root.addView(space(10))
+        root.addView(label("Найди свой лучший маршрут", 27f, Color.WHITE, bold = true))
         root.addView(space(8))
         root.addView(label(
-            "ART проверит актуальные MTProto-серверы и выберет наиболее стабильный из доступных.",
+            "ART проверит доступные MTProto-серверы и поможет выбрать подходящий для Telegram.",
             14f,
-            Color.rgb(151, 165, 185),
+            Color.rgb(157, 157, 164),
         ))
-        root.addView(space(24))
 
+        root.addView(space(24))
         val statusCard = card()
-        statusText = label("Готов к проверке", 16f, Color.WHITE, bold = true)
-        resultText = label("Прокси ещё не выбран", 19f, Color.WHITE, bold = true)
-        detailText = label("Нажми «Найти лучший прокси», чтобы проверить список.", 13f, MUTED)
-        warningText = label("", 12f, Color.rgb(255, 202, 117))
-        countText = label("Источники: iwizard7 · best + stable", 11f, MUTED)
+        statusText = label("ГОТОВ К ПРОВЕРКЕ", 10f, Color.rgb(170, 211, 183), bold = true).apply {
+            letterSpacing = 0.08f
+            background = rounded(Color.rgb(29, 43, 34), 30)
+            setPadding(dp(11), dp(8), dp(11), dp(8))
+        }
+        resultText = label("Маршрут ещё не выбран", 21f, Color.WHITE, bold = true)
+        detailText = label(
+            "Нажми кнопку ниже — ART проверит обновляемые источники.",
+            13f,
+            Color.rgb(157, 157, 164),
+        )
+        warningText = label("", 12f, Color.rgb(221, 187, 128))
+        countText = label("ИСТОЧНИКИ · 2", 10f, Color.rgb(116, 116, 124), bold = true).apply {
+            letterSpacing = 0.08f
+        }
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = true
             visibility = View.GONE
         }
-        statusCard.addView(statusText)
-        statusCard.addView(space(14))
+
+        statusCard.addView(statusText, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        statusCard.addView(space(20))
         statusCard.addView(resultText)
         statusCard.addView(space(7))
         statusCard.addView(detailText)
-        statusCard.addView(space(10))
-        statusCard.addView(warningText)
-        statusCard.addView(space(8))
-        statusCard.addView(progress, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(4),
-        ))
         statusCard.addView(space(12))
+        statusCard.addView(warningText)
+        statusCard.addView(space(12))
+        statusCard.addView(progress, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(3),
+        ))
+        statusCard.addView(space(15))
         statusCard.addView(countText)
         root.addView(statusCard)
 
-        root.addView(space(16))
-        findButton = actionButton("НАЙТИ ЛУЧШИЙ ПРОКСИ", primary = true).apply {
+        root.addView(space(14))
+        findButton = actionButton("НАЙТИ ЛУЧШИЙ МАРШРУТ", primary = true).apply {
             setOnClickListener { findBestProxy() }
         }
         root.addView(findButton, fullWidth())
         root.addView(space(10))
-        telegramButton = actionButton("ДОБАВИТЬ В TELEGRAM", primary = false).apply {
+        telegramButton = actionButton("ПЕРЕДАТЬ В TELEGRAM", primary = false).apply {
             isEnabled = false
-            alpha = 0.45f
+            alpha = 0.38f
             setOnClickListener { addSelectedToTelegram() }
         }
         root.addView(telegramButton, fullWidth())
 
         root.addView(space(24))
-        val info = card()
-        info.addView(label("ВАЖНО", 11f, Color.WHITE, bold = true))
-        info.addView(space(8))
-        info.addView(label(
-            "Прокси управляются сторонними людьми. Они могут видеть метаданные соединения. " +
-                "ART исключает серверы с подтверждённой рекламой, но неизвестный статус " +
-                "не означает, что рекламы нет.",
-            12f,
-            MUTED,
-        ))
-        root.addView(info)
-        root.addView(space(18))
         root.addView(label(
-            "Первая версия передаёт выбранный прокси в официальное приложение Telegram. " +
-                "Добавление и включение прокси подтверждаются в Telegram.",
+            "ВАЖНО  ·  В этой preview-версии выбранный MTProto-прокси передаётся в Telegram. " +
+                "Это пока не собственный ART-транспорт и не системный VPN.",
             11f,
-            Color.rgb(119, 134, 154),
+            Color.rgb(122, 122, 129),
         ))
+        root.addView(space(16))
+        root.addView(label(
+            "ARTproxy 0.2.0",
+            10f,
+            Color.rgb(83, 83, 90),
+            bold = true,
+        ).apply {
+            letterSpacing = 0.08f
+            gravity = Gravity.CENTER
+        })
 
         setContentView(scroll)
     }
@@ -162,9 +199,9 @@ class MainActivity : Activity() {
         telegramButton.alpha = 0.45f
         findButton.isEnabled = false
         findButton.text = "ПРОВЕРЯЮ СЕРВЕРЫ…"
-        statusText.text = "Загружаю свежий список"
+        statusText.text = "ИДЁТ ПРОВЕРКА"
         resultText.text = "Ищу доступный маршрут"
-        detailText.text = "Проверяю MTProto-серверы и время отклика."
+        detailText.text = "Проверяю доступность серверов и время отклика."
         warningText.text = ""
         countText.text = "Подключаюсь к публичным источникам…"
         progress.visibility = View.VISIBLE
@@ -174,10 +211,10 @@ class MainActivity : Activity() {
             mainHandler.post {
                 progress.visibility = View.GONE
                 findButton.isEnabled = true
-                findButton.text = "НАЙТИ ЛУЧШИЙ ПРОКСИ"
+                findButton.text = "ПОВТОРИТЬ ПОИСК"
                 result.onSuccess { selection ->
                     selected = selection.candidate
-                    statusText.text = "Лучший доступный маршрут найден"
+                    statusText.text = "МАРШРУТ НАЙДЕН"
                     resultText.text = "${selection.candidate.server}:${selection.candidate.port}"
                     val latency = selection.candidate.latencyMs?.let { "${it.toInt()} мс" } ?: "нет RTT"
                     detailText.text = "Отклик: $latency · рейтинг: ${selection.score.toInt()}/100"
@@ -190,7 +227,7 @@ class MainActivity : Activity() {
                     telegramButton.isEnabled = true
                     telegramButton.alpha = 1f
                 }.onFailure { error ->
-                    statusText.text = "Не удалось выбрать сервер"
+                    statusText.text = "НЕ УДАЛОСЬ НАЙТИ СЕРВЕР"
                     resultText.text = "Нет подходящего прокси"
                     detailText.text = error.message ?: "Проверь интернет и попробуй ещё раз."
                     warningText.text = ""
@@ -325,7 +362,7 @@ class MainActivity : Activity() {
             connectTimeout = 5_000
             readTimeout = 6_000
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "ART-Mobile/0.1.0")
+            setRequestProperty("User-Agent", "ARTproxy/0.2.0")
             setRequestProperty("Accept", "text/plain, application/json")
             useCaches = false
         }
@@ -374,7 +411,7 @@ class MainActivity : Activity() {
     private fun card(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(18), dp(18), dp(18))
-        background = rounded(Color.rgb(17, 23, 34), 22)
+        background = rounded(Color.rgb(18, 18, 20), 22)
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -398,15 +435,16 @@ class MainActivity : Activity() {
     private fun actionButton(value: String, primary: Boolean) = Button(this).apply {
         text = value
         textSize = 12f
-        letterSpacing = 0.06f
+        letterSpacing = 0.08f
+        setPadding(dp(14), 0, dp(14), 0)
         setTextColor(if (primary) Color.rgb(8, 11, 17) else Color.WHITE)
         typeface = Typeface.DEFAULT_BOLD
         isAllCaps = false
         background = rounded(
-            if (primary) Color.WHITE else Color.rgb(31, 41, 57),
+            if (primary) Color.WHITE else Color.rgb(35, 35, 39),
             16,
         )
-        minimumHeight = dp(54)
+        minimumHeight = dp(56)
         elevation = dp(0).toFloat()
         stateListAnimator = null
     }
@@ -422,10 +460,8 @@ class MainActivity : Activity() {
 
     private fun fullWidth() = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(54),
-    )
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+        dp(56),
+    )(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
         private val MUTED = Color.rgb(151, 165, 185)

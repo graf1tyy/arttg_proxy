@@ -1,26 +1,23 @@
-# ART Mobile
+# ARTproxy
 
-ART Mobile is the first Android client built around the shared ART Kotlin core.
+Минималистичное Android-приложение для проверки доступных серверов Telegram.
 
-## First preview scope
+## Возможности preview
 
-- Downloads the maintained `best.txt` and `stable.txt` MTProto feeds.
-- Parses and deduplicates Telegram proxy links using the shared Kotlin core.
-- Enriches candidates from the upstream `endpoints.json` metadata, including sponsor status, success rate and RTT.
-- Performs a bounded TCP reachability check against the feed's published proxy endpoints.
-- Excludes proxies whose metadata explicitly reports a sponsor channel.
-- Keeps unknown ad-check status visible as a warning; unknown is not shown as clean.
-- Opens the selected `tg://proxy` link in Telegram. Telegram asks the user to add/enable that proxy.
+- Загрузка и объединение обновляемых MTProto-списков.
+- Проверка доступности найденных серверов.
+- Исключение серверов, для которых источник явно указал рекламный канал.
+- Передача выбранного сервера в официальное приложение Telegram.
 
-## Current limitation
+## Ограничения
 
-This preview does **not** create an Android system VPN and does not route TikTok or every phone app. It hands an MTProto proxy to Telegram. A separate Android `VpnService` plus an Android-native transport engine is required before ART can act as a system-wide VPN.
+Текущая preview-версия использует публичные MTProto-источники. Она **не содержит собственного ART-транспорта**, не запускает Android VPN и не маршрутизирует трафик других приложений телефона. Выбранный MTProto-прокси открывается в Telegram для подтверждения пользователем.
 
-Public proxies are third-party infrastructure. They can observe connection metadata and may stop working without notice. Use only if you accept that risk.
+Публичные прокси принадлежат третьим лицам и могут наблюдать метаданные соединения.
 
-## Build
+## Сборка
 
-Requires JDK 17, Android SDK 36 and Gradle 8.13.
+Нужны JDK 17, Android SDK 36 и Gradle 8.13.
 
 ```sh
 gradle --no-daemon :app:assembleRelease

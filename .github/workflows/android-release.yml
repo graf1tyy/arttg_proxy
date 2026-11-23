@@ -50,29 +50,29 @@ jobs:
           test -s "$APK"
           APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
           "$APKSIGNER" verify --verbose "$APK"
-          cp "$APK" ART-Mobile-v0.1.0.apk
-          sha256sum ART-Mobile-v0.1.0.apk > ART-Mobile-v0.1.0.apk.sha256
+          cp "$APK" ARTproxy-v0.2.0.apk
+          sha256sum ARTproxy-v0.2.0.apk > ARTproxy-v0.2.0.apk.sha256
 
       - name: Upload APK build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ART-Mobile-Android-APK
+          name: ARTproxy-Android-APK
           path: |
-            ART-Kotlin/ART-Mobile-v0.1.0.apk
-            ART-Kotlin/ART-Mobile-v0.1.0.apk.sha256
+            ART-Kotlin/ARTproxy-v0.2.0.apk
+            ART-Kotlin/ARTproxy-v0.2.0.apk.sha256
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish ART Mobile preview release
-        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Mobile v0.1.0') }}"
+      - name: Publish ARTproxy Android preview release
+        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ARTproxy v0.2.0') }}"
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="mobile-v0.1.0"
-          APK="ART-Mobile-v0.1.0.apk"
+          TAG="mobile-v0.2.0"
+          APK="ARTproxy-v0.2.0.apk"
           CHECKSUM="$APK.sha256"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||             gh release create "$TAG" "$APK" "$CHECKSUM"               --repo "$GITHUB_REPOSITORY"               --title "ART Mobile v0.1.0 (Android preview)"               --prerelease               --notes "Первая Android preview-сборка. Автоматически загружает и проверяет публичные MTProto-прокси, исключает явно рекламные прокси и передаёт выбранный сервер в Telegram. Это не системный VPN: другие приложения телефона пока не туннелируются."
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||             gh release create "$TAG" "$APK" "$CHECKSUM"               --repo "$GITHUB_REPOSITORY"               --title "ARTproxy v0.2.0 (Android preview)"               --prerelease               --notes "Обновлённый минималистичный интерфейс и иконка ARTproxy. Preview использует публичные MTProto-источники и передаёт выбранный сервер в Telegram; собственный Android-транспорт и системный VPN пока не реализованы."
           gh release upload "$TAG" "$APK" "$CHECKSUM" --repo "$GITHUB_REPOSITORY" --clobber
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets
