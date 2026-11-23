@@ -87,14 +87,56 @@ jobs:
         working-directory: source/ART-Desktop-v2.0.1
         run: python -m unittest discover -s tests -v
 
-      - name: Smoke test Qt interface
+      - name: Smoke test Qt interface and connection controls
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         run: |
           $env:QT_QPA_PLATFORM = 'offscreen'
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'art-qt-smoke'
-          python -c "from PySide6.QtWidgets import QApplication; from art.ui import MainWindow; app=QApplication([]); w=MainWindow(); w.show(); app.processEvents(); w.close(); app.processEvents(); print('ART_QT_SMOKE_OK')"
-          if ($LASTEXITCODE -ne 0) { throw 'Qt interface smoke test failed.' }
+          @'
+          import app as art_app  # installs the same runtime patch used by packaged ART.exe
+          from PySide6.QtWidgets import QApplication, QPushButton
+          import art.ui as ui_module
+          from art.ui import MainWindow
+
+          qt = QApplication([])
+          window = MainWindow()
+          window.show()
+          qt.processEvents()
+
+          assert window.connect_btn.text() == "Подключить Telegram", window.connect_btn.text()
+          assert not window.connect_btn.isHidden(), "Connect button is hidden"
+          assert window.connect_btn.isEnabled(), "Connect button is disabled"
+          assert {"—", "□", "×"}.issubset({b.text() for b in window.findChildren(QPushButton)}), "Window controls missing"
+
+          starts = []
+          window.start_engine = lambda: starts.append("start")
+          window.engine_process = None
+          window.connect_btn.click()
+          assert starts == ["start"], f"Connect click did not start engine: {starts}"
+
+          class RunningProcess:
+              def poll(self):
+                  return None
+
+          opened = []
+          window.engine_process = RunningProcess()
+          ui_module.is_local_listener = lambda host, port: True
+          window.open_telegram = lambda: opened.append("open")
+          window._apply_state(True, "Active", "Bridge is active")
+          assert window.connect_btn.text() == "Открыть Telegram", window.connect_btn.text()
+          assert not window.connect_btn.isHidden(), "Open Telegram button is hidden while active"
+          assert window.connect_btn.isEnabled(), "Open Telegram button is disabled"
+          window.connect_btn.click()
+          assert opened == ["open"], f"Active connect button did not open Telegram: {opened}"
+
+          window.engine_process = None
+          window.close()
+          qt.processEvents()
+          print("ART_QT_CONNECT_BUTTONS_OK")
+          '@ | Set-Content qt_connect_smoke.py -Encoding utf8
+          python qt_connect_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'Qt connection button regression test failed.' }
 
       - name: Build and smoke test headless engine
         shell: pwsh
