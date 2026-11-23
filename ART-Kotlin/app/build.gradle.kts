@@ -9,17 +9,15 @@ android {
 
     defaultConfig {
         applicationId = "com.artunnel.mobile"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     buildTypes {
         getByName("release") {
-            // First public preview is signed with the CI debug key so it can be
-            // installed directly. A persistent private release key is needed
-            // before publishing in-place upgrades to existing installs.
+            // Preview signing only. Configure a persistent private key before store distribution.
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
         }
@@ -29,6 +27,7 @@ android {
 }
 
 dependencies {
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
     testImplementation("junit:junit:4.13.2")
 }
 

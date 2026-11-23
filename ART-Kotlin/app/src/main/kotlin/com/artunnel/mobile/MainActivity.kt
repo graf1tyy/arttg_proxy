@@ -1,73 +1,71 @@
 package com.artunnel.mobile
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import org.json.JSONObject
-import art.core.ProxyCandidate
-import art.core.ProxyCatalog
-import art.core.ProxyRanker
-import art.core.SponsorStatus
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.net.URL
-import java.nio.charset.StandardCharsets
-import java.util.concurrent.Callable
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val worker = Executors.newSingleThreadExecutor()
-    private var selected: ProxyCandidate? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var statusPill: TextView
+    private lateinit var headline: TextView
+    private lateinit var description: TextView
+    private lateinit var primaryButton: TextView
+    private lateinit var telegramButton: TextView
+    private lateinit var portValue: TextView
+    private lateinit var errorText: TextView
 
-    private lateinit var statusText: TextView
-    private lateinit var resultText: TextView
-    private lateinit var detailText: TextView
-    private lateinit var warningText: TextView
-    private lateinit var countText: TextView
-    private lateinit var progress: ProgressBar
-    private lateinit var findButton: Button
-    private lateinit var telegramButton: Button
+    private val refreshTask = object : Runnable {
+        override fun run() {
+            refreshState()
+            handler.postDelayed(this, 700)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(8, 8, 9)
-        window.navigationBarColor = Color.rgb(8, 8, 9)
+        window.statusBarColor = BG
+        window.navigationBarColor = BG
         window.decorView.systemUiVisibility = 0
         buildScreen()
+        requestNotificationPermission()
     }
 
-    override fun onDestroy() {
-        worker.shutdownNow()
-        super.onDestroy()
+    override fun onResume() {
+        super.onResume()
+        handler.removeCallbacks(refreshTask)
+        handler.post(refreshTask)
+    }
+
+    override fun onPause() {
+        handler.removeCallbacks(refreshTask)
+        super.onPause()
     }
 
     private fun buildScreen() {
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(Color.rgb(8, 8, 9))
+            setBackgroundColor(BG)
             isFillViewport = true
+            clipToPadding = false
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(24), dp(22), dp(28))
+            setPadding(dp(22), dp(22), dp(22), dp(28))
         }
         scroll.addView(root, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -78,378 +76,299 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val mark = TextView(this).apply {
-            text = "AR"
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.BLACK)
-            background = rounded(Color.WHITE, 14)
+        val icon = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        header.addView(mark, LinearLayout.LayoutParams(dp(46), dp(46)))
-
+        header.addView(icon, LinearLayout.LayoutParams(dp(48), dp(48)))
         val brand = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
-            addView(label("ARTproxy", 21f, Color.WHITE, bold = true))
-            addView(label("SMART TELEGRAM ROUTE", 9f, Color.rgb(130, 130, 136), bold = true).apply {
-                letterSpacing = 0.13f
+            addView(label("ARTproxy", 21f, WHITE, true))
+            addView(label("PRIVATE ROUTE FOR TELEGRAM", 9f, MUTED, true).apply {
+                letterSpacing = 0.11f
             })
         }
-        header.addView(brand, LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
-        ))
-        header.addView(label("PREVIEW", 9f, Color.rgb(155, 155, 160), bold = true).apply {
-            letterSpacing = 0.10f
-            background = rounded(Color.rgb(28, 28, 31), 30)
-            setPadding(dp(10), dp(7), dp(10), dp(7))
+        header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(label("ANDROID", 9f, MUTED, true).apply {
+            letterSpacing = 0.12f
+            background = round(PANEL_ALT, 30)
+            setPadding(dp(11), dp(8), dp(11), dp(8))
         })
         root.addView(header)
 
         root.addView(space(34))
-        root.addView(label("ПОДКЛЮЧЕНИЕ", 10f, Color.rgb(155, 155, 160), bold = true).apply {
+        root.addView(label("ПОДКЛЮЧЕНИЕ", 10f, MUTED, true).apply {
             letterSpacing = 0.18f
         })
-        root.addView(space(10))
-        root.addView(label("Найди свой лучший маршрут", 27f, Color.WHITE, bold = true))
+        root.addView(space(9))
+        root.addView(label("Твой маршрут. Без лишних серверов.", 25f, WHITE, true))
         root.addView(space(8))
         root.addView(label(
-            "ART проверит доступные MTProto-серверы и поможет выбрать подходящий для Telegram.",
+            "ART автоматически поднимает локальный мост и выбирает рабочий сетевой маршрут.",
             14f,
-            Color.rgb(157, 157, 164),
+            SUBTLE,
         ))
 
-        root.addView(space(24))
-        val statusCard = card()
-        statusText = label("ГОТОВ К ПРОВЕРКЕ", 10f, Color.rgb(170, 211, 183), bold = true).apply {
-            letterSpacing = 0.08f
-            background = rounded(Color.rgb(29, 43, 34), 30)
+        root.addView(space(22))
+        val connectionCard = card()
+        statusPill = label("●  ОТКЛЮЧЕНО", 10f, MUTED, true).apply {
+            letterSpacing = 0.07f
+            background = round(PANEL_ALT, 30)
             setPadding(dp(11), dp(8), dp(11), dp(8))
         }
-        resultText = label("Маршрут ещё не выбран", 21f, Color.WHITE, bold = true)
-        detailText = label(
-            "Нажми кнопку ниже — ART проверит обновляемые источники.",
+        headline = label("ART готов к запуску", 22f, WHITE, true)
+        description = label(
+            "Нажми кнопку, чтобы запустить локальный ART-мост для Telegram.",
             13f,
-            Color.rgb(157, 157, 164),
+            SUBTLE,
         )
-        warningText = label("", 12f, Color.rgb(221, 187, 128))
-        countText = label("ИСТОЧНИКИ · 2", 10f, Color.rgb(116, 116, 124), bold = true).apply {
-            letterSpacing = 0.08f
+        errorText = label("", 11f, WARNING)
+        connectionCard.addView(statusPill, wrap())
+        connectionCard.addView(space(19))
+        connectionCard.addView(headline)
+        connectionCard.addView(space(8))
+        connectionCard.addView(description)
+        connectionCard.addView(space(9))
+        connectionCard.addView(errorText)
+        connectionCard.addView(space(12))
+        val portRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            visibility = View.GONE
+        portRow.addView(label("ЛОКАЛЬНЫЙ МОСТ", 9f, MUTED, true), LinearLayout.LayoutParams(0, dp(20), 1f))
+        portValue = label("127.0.0.1:1443", 11f, WHITE, true).apply {
+            typeface = Typeface.MONOSPACE
         }
+        portRow.addView(portValue)
+        connectionCard.addView(portRow)
+        root.addView(connectionCard)
 
-        statusCard.addView(statusText, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        statusCard.addView(space(20))
-        statusCard.addView(resultText)
-        statusCard.addView(space(7))
-        statusCard.addView(detailText)
-        statusCard.addView(space(12))
-        statusCard.addView(warningText)
-        statusCard.addView(space(12))
-        statusCard.addView(progress, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(3),
-        ))
-        statusCard.addView(space(15))
-        statusCard.addView(countText)
-        root.addView(statusCard)
-
-        root.addView(space(14))
-        findButton = actionButton("НАЙТИ ЛУЧШИЙ МАРШРУТ", primary = true).apply {
-            setOnClickListener { findBestProxy() }
+        root.addView(space(13))
+        primaryButton = button("ЗАПУСТИТЬ ART", primary = true).apply {
+            setOnClickListener { toggleProxy() }
         }
-        root.addView(findButton, fullWidth())
+        root.addView(primaryButton, fullWidth())
         root.addView(space(10))
-        telegramButton = actionButton("ПЕРЕДАТЬ В TELEGRAM", primary = false).apply {
+        telegramButton = button("ОТКРЫТЬ TELEGRAM", primary = false).apply {
             isEnabled = false
-            alpha = 0.38f
-            setOnClickListener { addSelectedToTelegram() }
+            alpha = 0.42f
+            setOnClickListener { openTelegram() }
         }
         root.addView(telegramButton, fullWidth())
 
-        root.addView(space(24))
-        root.addView(label(
-            "ВАЖНО  ·  В этой preview-версии выбранный MTProto-прокси передаётся в Telegram. " +
-                "Это пока не собственный ART-транспорт и не системный VPN.",
-            11f,
-            Color.rgb(122, 122, 129),
+        root.addView(space(22))
+        val routeCard = card()
+        routeCard.addView(label("СЕТЕВОЙ МАРШРУТ", 10f, MUTED, true).apply {
+            letterSpacing = 0.14f
+        })
+        routeCard.addView(space(15))
+        addRouteRow(routeCard, "01", "WebSocket / WSS", "Основной транспорт")
+        routeCard.addView(separator())
+        addRouteRow(routeCard, "02", "Cloudflare", "Альтернативный маршрут")
+        routeCard.addView(separator())
+        addRouteRow(routeCard, "03", "TCP fallback", "Резерв при сбое WS")
+        root.addView(routeCard)
+
+        root.addView(space(17))
+        val note = card()
+        note.background = round(PANEL_DARK, 20)
+        note.addView(label("БЕЗ ПУБЛИЧНЫХ MTProto-СПИСКОВ", 9f, ACCENT, true).apply {
+            letterSpacing = 0.10f
+        })
+        note.addView(space(8))
+        note.addView(label(
+            "Telegram подключается к локальному адресу на этом устройстве. " +
+                "ARTproxy самостоятельно строит внешний маршрут — искать и добавлять чужие прокси не нужно.",
+            12f,
+            SUBTLE,
         ))
-        root.addView(space(16))
+        root.addView(note)
+
+        root.addView(space(21))
         root.addView(label(
-            "ARTproxy 0.2.0",
-            10f,
-            Color.rgb(83, 83, 90),
-            bold = true,
+            "ARTproxy 0.3.0  ·  НЕ СИСТЕМНЫЙ VPN",
+            9f,
+            FOOTER,
+            true,
         ).apply {
-            letterSpacing = 0.08f
             gravity = Gravity.CENTER
+            letterSpacing = 0.08f
         })
 
         setContentView(scroll)
+        refreshState()
     }
 
-    private fun findBestProxy() {
-        if (findButton.isEnabled.not()) return
-        selected = null
-        telegramButton.isEnabled = false
-        telegramButton.alpha = 0.45f
-        findButton.isEnabled = false
-        findButton.text = "ПРОВЕРЯЮ СЕРВЕРЫ…"
-        statusText.text = "ИДЁТ ПРОВЕРКА"
-        resultText.text = "Ищу доступный маршрут"
-        detailText.text = "Проверяю доступность серверов и время отклика."
-        warningText.text = ""
-        countText.text = "Подключаюсь к публичным источникам…"
-        progress.visibility = View.VISIBLE
-
-        worker.execute {
-            val result = runCatching { loadAndRank() }
-            mainHandler.post {
-                progress.visibility = View.GONE
-                findButton.isEnabled = true
-                findButton.text = "ПОВТОРИТЬ ПОИСК"
-                result.onSuccess { selection ->
-                    selected = selection.candidate
-                    statusText.text = "МАРШРУТ НАЙДЕН"
-                    resultText.text = "${selection.candidate.server}:${selection.candidate.port}"
-                    val latency = selection.candidate.latencyMs?.let { "${it.toInt()} мс" } ?: "нет RTT"
-                    detailText.text = "Отклик: $latency · рейтинг: ${selection.score.toInt()}/100"
-                    warningText.text = if (selection.candidate.sponsorStatus == SponsorStatus.UNKNOWN) {
-                        "Реклама не проверена. Это не подтверждение отсутствия спонсорского канала."
-                    } else {
-                        "По данным источника рекламный канал не выявлен."
-                    }
-                    countText.text = "Проверено: ${selection.probed} · доступно: ${selection.total}"
-                    telegramButton.isEnabled = true
-                    telegramButton.alpha = 1f
-                }.onFailure { error ->
-                    statusText.text = "НЕ УДАЛОСЬ НАЙТИ СЕРВЕР"
-                    resultText.text = "Нет подходящего прокси"
-                    detailText.text = error.message ?: "Проверь интернет и попробуй ещё раз."
-                    warningText.text = ""
-                    countText.text = "Подтверждённо рекламные серверы исключаются."
-                }
-            }
+    private fun addRouteRow(parent: LinearLayout, number: String, title: String, subtitle: String) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
+        row.addView(label(number, 10f, ACCENT, true), LinearLayout.LayoutParams(dp(31), dp(34)))
+        val text = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label(title, 13f, WHITE, true))
+            addView(space(4))
+            addView(label(subtitle, 11f, MUTED))
+        }
+        row.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        parent.addView(row)
     }
 
-    private data class Selection(
-        val candidate: ProxyCandidate,
-        val score: Double,
-        val probed: Int,
-        val total: Int,
-    )
-
-    private fun loadAndRank(): Selection {
-        val feeds = listOf(
-            "https://iwizard7.github.io/MTProxy_list/best.txt" to "iwizard-best",
-            "https://iwizard7.github.io/MTProxy_list/stable.txt" to "iwizard-stable",
-        )
-        val feedPool = Executors.newFixedThreadPool(3)
-        val feedFutures = feeds.map { (url, id) ->
-            feedPool.submit(Callable {
-                runCatching { readText(url) }.getOrNull()?.let { id to it }
-            })
+    private fun toggleProxy() {
+        val prefs = getSharedPreferences(ArtProxyService.PREFS, MODE_PRIVATE)
+        val running = runCatching { NativeProxy.isListening() }.getOrDefault(false)
+        val starting = prefs.getBoolean(ArtProxyService.KEY_STARTING, false)
+        val action = if (running || starting) ArtProxyService.ACTION_STOP else ArtProxyService.ACTION_START
+        if (action == ArtProxyService.ACTION_START) {
+            prefs.edit()
+                .putBoolean(ArtProxyService.KEY_STARTING, true)
+                .putString(ArtProxyService.KEY_ERROR, "")
+                .apply()
         }
-        val metadataFuture = feedPool.submit(Callable {
-            runCatching { readText("https://iwizard7.github.io/MTProxy_list/endpoints.json") }
-                .getOrNull()
-        })
-        val batches = feedFutures.mapNotNull { future ->
-            runCatching { future.get(9, TimeUnit.SECONDS) }.getOrNull()
-        }
-        val metadata = runCatching { metadataFuture.get(9, TimeUnit.SECONDS) }.getOrNull()
-        feedPool.shutdownNow()
-
-        if (batches.isEmpty()) throw IllegalStateException("Не удалось загрузить список прокси.")
-
-        val catalog = ProxyCatalog()
-        val imported = batches.flatMap { (source, text) -> catalog.parseFeed(source, text) }
-        val merged = catalog.merge(imported)
-        if (merged.isEmpty()) throw IllegalStateException("В источниках пока нет корректных MTProto-ссылок.")
-
-        val metadataByKey = parseMetadata(metadata)
-        val enriched = merged.map { candidate ->
-            val meta = metadataByKey[candidate.key]
-            val adStatus = when (meta?.optString("adsStatus", "unknown")) {
-                "none" -> SponsorStatus.NONE
-                "present" -> SponsorStatus.PRESENT
-                else -> SponsorStatus.UNKNOWN
-            }
-            candidate.copy(
-                sourceVerified = meta?.optBoolean("verified", true) ?: true,
-                sponsorStatus = adStatus,
-                requestSuccessRate = meta?.optNullableDouble("success_rate"),
-                stabilityRate = meta?.optNullableDouble("success_rate"),
-                latencyMs = meta?.optNullableDouble("median_rtt_ms")
-                    ?: meta?.optNullableDouble("rtt_ms")
-                    ?: meta?.optNullableDouble("check_ms"),
-                samples = meta?.optInt("samples", 0) ?: 0,
-            )
-        }
-
-        // Test a bounded set from an explicitly maintained, handshake-checked feed.
-        val toProbe = enriched
-            .filter { it.sponsorStatus != SponsorStatus.PRESENT }
-            .sortedWith(
-                compareByDescending<ProxyCandidate> { it.requestSuccessRate ?: 0.0 }
-                    .thenBy { it.latencyMs ?: Double.MAX_VALUE },
-            )
-            .take(32)
-        val probePool = Executors.newFixedThreadPool(8)
-        val probes = toProbe.map { candidate ->
-            probePool.submit(Callable { probeTcp(candidate) })
-        }
-        val probed = probes.mapNotNull { future ->
-            runCatching { future.get(4, TimeUnit.SECONDS) }.getOrNull()
-        }
-        probePool.shutdownNow()
-
-        val ranked = ProxyRanker.rankExcludingDetectedSponsor(probed.filter { it.tcpReachable })
-        val best = ranked.firstOrNull()
-            ?: throw IllegalStateException("Нет серверов, прошедших актуальную проверку доступности.")
-        return Selection(
-            candidate = best.candidate,
-            score = best.score,
-            probed = probed.count { it.tcpReachable },
-            total = merged.size,
-        )
-    }
-
-    private fun parseMetadata(json: String?): Map<String, JSONObject> {
-        if (json.isNullOrBlank()) return emptyMap()
-        val result = linkedMapOf<String, JSONObject>()
-        val endpoints = runCatching { JSONObject(json).optJSONArray("endpoints") }.getOrNull()
-            ?: return emptyMap()
-        for (index in 0 until endpoints.length()) {
-            val item = endpoints.optJSONObject(index) ?: continue
-            val server = item.optString("server", "")
-            val port = item.optInt("port", 0)
-            val secret = item.optString("secret", "")
-            if (server.isBlank() || port !in 1..65535 || secret.isBlank()) continue
-            val status = item.optJSONObject("ads")?.optString("status", "unknown") ?: "unknown"
-            val candidate = ProxyCandidate(server, port, secret)
-            result[candidate.key] = JSONObject(item.toString()).put("adsStatus", status)
-        }
-        return result
-    }
-
-    private fun probeTcp(candidate: ProxyCandidate): ProxyCandidate {
-        val started = System.nanoTime()
-        val reachable = runCatching {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(candidate.server, candidate.port), 1_400)
-                socket.isConnected
-            }
-        }.getOrDefault(false)
-        val measured = (System.nanoTime() - started) / 1_000_000.0
-        return candidate.copy(
-            tcpReachable = reachable,
-            latencyMs = if (reachable) {
-                candidate.latencyMs ?: measured
-            } else {
-                candidate.latencyMs
-            },
-        )
-    }
-
-    private fun readText(address: String): String {
-        val connection = (URL(address).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 5_000
-            readTimeout = 6_000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "ARTproxy/0.2.0")
-            setRequestProperty("Accept", "text/plain, application/json")
-            useCaches = false
-        }
+        val intent = Intent(this, ArtProxyService::class.java).setAction(action)
         try {
-            val code = connection.responseCode
-            if (code !in 200..299) throw IllegalStateException("HTTP $code")
-            val output = StringBuilder()
-            BufferedReader(InputStreamReader(connection.inputStream, StandardCharsets.UTF_8)).use { reader ->
-                val buffer = CharArray(8_192)
-                var total = 0
-                while (true) {
-                    val count = reader.read(buffer)
-                    if (count < 0) break
-                    total += count
-                    if (total > 2 * 1024 * 1024) throw IllegalStateException("Источник слишком большой.")
-                    output.append(buffer, 0, count)
-                }
-            }
-            return output.toString()
-        } finally {
-            connection.disconnect()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+        } catch (error: Throwable) {
+            prefs.edit()
+                .putBoolean(ArtProxyService.KEY_STARTING, false)
+                .putBoolean(ArtProxyService.KEY_RUNNING, false)
+                .putString(ArtProxyService.KEY_ERROR, error.message ?: "Не удалось запустить службу")
+                .apply()
         }
+        refreshState()
     }
 
-    private fun addSelectedToTelegram() {
-        val candidate = selected ?: return
+    private fun openTelegram() {
+        if (!runCatching { NativeProxy.isListening() }.getOrDefault(false)) {
+            refreshState()
+            return
+        }
+        val prefs = getSharedPreferences(ArtProxyService.PREFS, MODE_PRIVATE)
+        val secret = ArtSecretStore.getOrCreate(this)
+        val port = prefs.getInt(ArtProxyService.KEY_PORT, ArtProxyService.DEFAULT_PORT)
         val uri = Uri.Builder()
             .scheme("tg")
             .authority("proxy")
-            .appendQueryParameter("server", candidate.server)
-            .appendQueryParameter("port", candidate.port.toString())
-            .appendQueryParameter("secret", candidate.secret)
+            .appendQueryParameter("server", ArtProxyService.HOST)
+            .appendQueryParameter("port", port.toString())
+            .appendQueryParameter("secret", "dd$secret")
             .build()
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
-        }.onFailure {
-            detailText.text = "Не найдено приложение Telegram, поддерживающее добавление MTProto-прокси."
+        try {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, uri), "Открыть в Telegram"))
+        } catch (_: Throwable) {
+            errorText.text = "Не найден Telegram или совместимый клиент."
         }
     }
 
-    private fun JSONObject.optNullableDouble(key: String): Double? {
-        if (!has(key) || isNull(key)) return null
-        return optDouble(key).takeIf { it.isFinite() }
+    private fun refreshState() {
+        val prefs = getSharedPreferences(ArtProxyService.PREFS, MODE_PRIVATE)
+        val running = runCatching { NativeProxy.isListening() }.getOrDefault(false)
+        val starting = prefs.getBoolean(ArtProxyService.KEY_STARTING, false)
+        val port = prefs.getInt(ArtProxyService.KEY_PORT, ArtProxyService.DEFAULT_PORT)
+        portValue.text = "${ArtProxyService.HOST}:$port"
+        val error = prefs.getString(ArtProxyService.KEY_ERROR, "").orEmpty()
+
+        when {
+            running -> {
+                statusPill.text = "●  ПОДКЛЮЧЕНО"
+                statusPill.setTextColor(SUCCESS)
+                statusPill.background = round(SUCCESS_BG, 30)
+                headline.text = "Маршрут активен"
+                description.text = "Локальный мост запущен. Теперь можно подключить Telegram."
+                primaryButton.text = "ОСТАНОВИТЬ ART"
+                telegramButton.isEnabled = true
+                telegramButton.alpha = 1f
+                errorText.text = ""
+            }
+            starting -> {
+                statusPill.text = "●  ЗАПУСК"
+                statusPill.setTextColor(ACCENT)
+                statusPill.background = round(ACCENT_BG, 30)
+                headline.text = "Подготавливаю маршрут"
+                description.text = "Запускаю локальный мост и проверяю сетевой транспорт."
+                primaryButton.text = "ЗАПУСК…"
+                primaryButton.isEnabled = false
+                telegramButton.isEnabled = false
+                telegramButton.alpha = 0.42f
+                errorText.text = ""
+            }
+            else -> {
+                statusPill.text = "●  ОТКЛЮЧЕНО"
+                statusPill.setTextColor(MUTED)
+                statusPill.background = round(PANEL_ALT, 30)
+                headline.text = "ART готов к запуску"
+                description.text = "Нажми кнопку, чтобы запустить локальный ART-мост для Telegram."
+                primaryButton.text = "ЗАПУСТИТЬ ART"
+                primaryButton.isEnabled = true
+                telegramButton.isEnabled = false
+                telegramButton.alpha = 0.42f
+                errorText.text = error
+            }
+        }
+        if (!starting) primaryButton.isEnabled = true
     }
 
-    private fun card(): LinearLayout = LinearLayout(this).apply {
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 41)
+        }
+    }
+
+    private fun card() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(18), dp(18), dp(18))
-        background = rounded(Color.rgb(18, 18, 20), 22)
+        background = GradientDrawable().apply {
+            setColor(PANEL)
+            cornerRadius = dp(23).toFloat()
+            setStroke(dp(1), LINE)
+        }
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         )
     }
 
-    private fun label(
-        value: String,
-        size: Float,
-        color: Int,
-        bold: Boolean = false,
-    ) = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(color)
-        if (bold) setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-        includeFontPadding = false
-        setLineSpacing(dp(3).toFloat(), 1f)
-    }
+    private fun label(value: String, size: Float, color: Int, bold: Boolean = false) =
+        TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            includeFontPadding = false
+            if (bold) setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }
 
-    private fun actionButton(value: String, primary: Boolean) = Button(this).apply {
+    private fun button(value: String, primary: Boolean) = TextView(this).apply {
         text = value
         textSize = 12f
-        letterSpacing = 0.08f
-        setPadding(dp(14), 0, dp(14), 0)
-        setTextColor(if (primary) Color.rgb(8, 11, 17) else Color.WHITE)
+        gravity = Gravity.CENTER
+        letterSpacing = 0.10f
         typeface = Typeface.DEFAULT_BOLD
-        isAllCaps = false
-        background = rounded(
-            if (primary) Color.WHITE else Color.rgb(35, 35, 39),
-            16,
-        )
-        minimumHeight = dp(56)
-        elevation = dp(0).toFloat()
-        stateListAnimator = null
+        setTextColor(if (primary) Color.rgb(8, 10, 14) else WHITE)
+        background = round(if (primary) WHITE else PANEL_ALT, 16)
+        minimumHeight = dp(57)
+        setPadding(dp(16), dp(10), dp(16), dp(10))
+        isClickable = true
+        isFocusable = true
     }
 
-    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
+    private fun separator() = View(this).apply {
+        setBackgroundColor(LINE)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(1),
+        ).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(12)
+            leftMargin = dp(31)
+        }
+    }
+
+    private fun round(color: Int, radius: Int) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radius).toFloat()
     }
@@ -458,14 +377,32 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(1, dp(height))
     }
 
+    private fun wrap() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    )
+
     private fun fullWidth() = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(56),
+        dp(57),
     )
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private val MUTED = Color.rgb(151, 165, 185)
+        private const val BG = 0xFF08090B.toInt()
+        private const val PANEL = 0xFF151820.toInt()
+        private const val PANEL_ALT = 0xFF222630.toInt()
+        private const val PANEL_DARK = 0xFF101217.toInt()
+        private const val LINE = 0xFF2A303B.toInt()
+        private const val WHITE = 0xFFF6F7F9.toInt()
+        private const val SUBTLE = 0xFFADB3BE.toInt()
+        private const val MUTED = 0xFF777F8D.toInt()
+        private const val FOOTER = 0xFF626A77.toInt()
+        private const val ACCENT = 0xFF8AAEFF.toInt()
+        private const val ACCENT_BG = 0xFF1C2A43.toInt()
+        private const val SUCCESS = 0xFF8DD9AE.toInt()
+        private const val SUCCESS_BG = 0xFF1D3028.toInt()
+        private const val WARNING = 0xFFFFB27A.toInt()
     }
 }

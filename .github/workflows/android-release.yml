@@ -2,14 +2,16 @@ name: ART Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, android-art-transport]
     paths:
       - "ART-Kotlin/**"
       - ".github/workflows/android-release.yml"
+      - "README.md"
   pull_request:
     paths:
       - "ART-Kotlin/**"
       - ".github/workflows/android-release.yml"
+      - "README.md"
 
 permissions:
   contents: write
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   android-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: ART-Kotlin
@@ -35,44 +37,79 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Install Android SDK and NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Set up Rust Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build native ART transport
+        working-directory: ART-Kotlin/native/tgwsproxy
+        run: |
+          cargo ndk \
+            --platform 26 \
+            -t arm64-v8a \
+            -t armeabi-v7a \
+            -t x86_64 \
+            -o ../../app/src/main/jniLibs \
+            build --release --locked
+          test -s ../../app/src/main/jniLibs/arm64-v8a/libtgwsproxy.so
+          test -s ../../app/src/main/jniLibs/armeabi-v7a/libtgwsproxy.so
+          test -s ../../app/src/main/jniLibs/x86_64/libtgwsproxy.so
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
 
-      - name: Build installable Android APK
+      - name: Run tests and build installable APK
         run: gradle --no-daemon --stacktrace :app:testReleaseUnitTest :app:assembleRelease
 
-      - name: Verify APK exists and is signed
+      - name: Verify APK and create checksum
         shell: bash
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           "$APKSIGNER" verify --verbose "$APK"
-          cp "$APK" ARTproxy-v0.2.0.apk
-          sha256sum ARTproxy-v0.2.0.apk > ARTproxy-v0.2.0.apk.sha256
+          cp "$APK" ARTproxy-v0.3.0.apk
+          sha256sum ARTproxy-v0.3.0.apk > ARTproxy-v0.3.0.apk.sha256
 
       - name: Upload APK build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ARTproxy-Android-APK
+          name: ARTproxy-Android-v0.3.0
           path: |
-            ART-Kotlin/ARTproxy-v0.2.0.apk
-            ART-Kotlin/ARTproxy-v0.2.0.apk.sha256
+            ART-Kotlin/ARTproxy-v0.3.0.apk
+            ART-Kotlin/ARTproxy-v0.3.0.apk.sha256
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish ARTproxy Android preview release
-        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ARTproxy v0.2.0') }}"
+      - name: Publish Android preview release
+        if: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: ARTproxy v0.3.0') }}"
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="mobile-v0.2.0"
-          APK="ARTproxy-v0.2.0.apk"
+          TAG="mobile-v0.3.0"
+          APK="ARTproxy-v0.3.0.apk"
           CHECKSUM="$APK.sha256"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||             gh release create "$TAG" "$APK" "$CHECKSUM"               --repo "$GITHUB_REPOSITORY"               --title "ARTproxy v0.2.0 (Android preview)"               --prerelease               --notes "Обновлённый минималистичный интерфейс и иконка ARTproxy. Preview использует публичные MTProto-источники и передаёт выбранный сервер в Telegram; собственный Android-транспорт и системный VPN пока не реализованы."
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" "$APK" "$CHECKSUM" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "ARTproxy v0.3.0 (Android preview)" \
+              --prerelease \
+              --notes "Android app with the local Rust/Tokio ART bridge. No public MTProto proxy lists are used. Telegram connects to the local listener; ART selects WS/WSS, Cloudflare and TCP fallback routes."
           gh release upload "$TAG" "$APK" "$CHECKSUM" --repo "$GITHUB_REPOSITORY" --clobber
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets

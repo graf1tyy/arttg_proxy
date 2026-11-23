@@ -1,0 +1,390 @@
+use crate::config::{MAX_SPLITTER_BUFFER, ZERO64};
+use aes::cipher::{KeyIvInit, StreamCipher};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
+
+type Aes256Ctr = ctr::Ctr64BE<aes::Aes256>;
+
+// ---------------------------------------------------------------------------
+// TrackedStream — эмулирует Go cipher.Stream с поддержкой Clone() через
+// "промотку" keystream на processed байт.
+// ---------------------------------------------------------------------------
+
+pub struct TrackedStream {
+    key: Vec<u8>,
+    iv: Vec<u8>,
+    processed: u64,
+    stream: Aes256Ctr,
+}
+
+impl TrackedStream {
+    pub fn new(key: &[u8], iv: &[u8]) -> TrackedStream {
+        let stream = Aes256Ctr::new(key.into(), iv.into());
+        TrackedStream {
+            key: key.to_vec(),
+            iv: iv.to_vec(),
+            processed: 0,
+            stream,
+        }
+    }
+
+    // XOR in place (dst == src в нашем использовании)
+    pub fn xor(&mut self, data: &mut [u8]) {
+        self.stream.apply_keystream(data);
+        self.processed += data.len() as u64;
+    }
+
+    pub fn clone_state(&self) -> TrackedStream {
+        let mut clone_stream =
+            Aes256Ctr::new(self.key.as_slice().into(), self.iv.as_slice().into());
+        let mut dummy = [0u8; 16384];
+        let mut rem = self.processed;
+        while rem > 0 {
+            let n = if rem > 16384 { 16384 } else { rem as usize };
+            clone_stream.apply_keystream(&mut dummy[..n]);
+            rem -= n as u64;
+        }
+        TrackedStream {
+            key: self.key.clone(),
+            iv: self.iv.clone(),
+            processed: self.processed,
+            stream: clone_stream,
+        }
+    }
+}
+
+impl Drop for TrackedStream {
+    fn drop(&mut self) {
+        self.key.fill(0);
+        self.iv.fill(0);
+    }
+}
+
+pub fn new_aes_ctr(key: &[u8], iv: &[u8]) -> TrackedStream {
+    TrackedStream::new(key, iv)
+}
+
+// ---------------------------------------------------------------------------
+// MTProto Splitter
+// ---------------------------------------------------------------------------
+
+pub const PROTO_ABRIDGED: i32 = 0;
+pub const PROTO_INTERMEDIATE: i32 = 1;
+pub const PROTO_PADDED_INTERMEDIATE: i32 = 2;
+
+pub fn proto_tag_to_type(proto: u32) -> i32 {
+    match proto {
+        0xEEEEEEEE => PROTO_INTERMEDIATE,
+        0xDDDDDDDD => PROTO_PADDED_INTERMEDIATE,
+        _ => PROTO_ABRIDGED,
+    }
+}
+
+pub struct MsgSplitter {
+    stream: Aes256Ctr,
+    proto_type: i32,
+    cipher_buf: Vec<u8>,
+    plain_buf: Vec<u8>,
+    disabled: bool,
+}
+
+impl Drop for MsgSplitter {
+    fn drop(&mut self) {
+        self.cipher_buf.fill(0);
+        self.plain_buf.fill(0);
+    }
+}
+
+impl MsgSplitter {
+    pub fn new(init_data: &[u8], proto: u32) -> Option<MsgSplitter> {
+        if init_data.len() < 56 {
+            return None;
+        }
+        let mut stream = Aes256Ctr::new(init_data[8..40].into(), init_data[40..56].into());
+        let mut skip = [0u8; 64];
+        skip.copy_from_slice(&ZERO64);
+        stream.apply_keystream(&mut skip);
+        Some(MsgSplitter {
+            stream,
+            proto_type: proto_tag_to_type(proto),
+            cipher_buf: Vec::new(),
+            plain_buf: Vec::new(),
+            disabled: false,
+        })
+    }
+
+    pub fn split(&mut self, chunk: &[u8]) -> Vec<Vec<u8>> {
+        if chunk.is_empty() {
+            return Vec::new();
+        }
+        if self.disabled {
+            return vec![chunk.to_vec()];
+        }
+
+        if self.cipher_buf.len().saturating_add(chunk.len()) > MAX_SPLITTER_BUFFER {
+            let mut passthrough = std::mem::take(&mut self.cipher_buf);
+            passthrough.extend_from_slice(chunk);
+            self.plain_buf.fill(0);
+            self.plain_buf.clear();
+            self.disabled = true;
+            return vec![passthrough];
+        }
+
+        self.cipher_buf.extend_from_slice(chunk);
+        let mut decrypted = chunk.to_vec();
+        self.stream.apply_keystream(&mut decrypted);
+        self.plain_buf.extend_from_slice(&decrypted);
+        decrypted.fill(0);
+
+        let mut parts: Vec<Vec<u8>> = Vec::new();
+        while !self.cipher_buf.is_empty() {
+            let pkt_len = self.next_packet_len();
+            if pkt_len < 0 {
+                break;
+            }
+            if pkt_len == 0 {
+                parts.push(self.cipher_buf.clone());
+                self.cipher_buf.fill(0);
+                self.cipher_buf.clear();
+                self.plain_buf.fill(0);
+                self.plain_buf.clear();
+                self.disabled = true;
+                break;
+            }
+            let pkt_len = pkt_len as usize;
+            if self.cipher_buf.len() < pkt_len {
+                break;
+            }
+            parts.push(self.cipher_buf[..pkt_len].to_vec());
+            self.cipher_buf.drain(..pkt_len);
+            self.plain_buf.drain(..pkt_len);
+        }
+
+        if self.cipher_buf.is_empty() {
+            self.cipher_buf.clear();
+            self.plain_buf.clear();
+        }
+        parts
+    }
+
+    pub fn flush(&mut self) -> Vec<Vec<u8>> {
+        if self.cipher_buf.is_empty() {
+            return Vec::new();
+        }
+        let tail = self.cipher_buf.clone();
+        self.cipher_buf.fill(0);
+        self.cipher_buf.clear();
+        self.plain_buf.fill(0);
+        self.plain_buf.clear();
+        vec![tail]
+    }
+
+    fn next_packet_len(&self) -> i64 {
+        if self.plain_buf.is_empty() {
+            return -1;
+        }
+        match self.proto_type {
+            PROTO_ABRIDGED => {
+                let first = self.plain_buf[0] & 0x7F;
+                let header_len;
+                let payload_len;
+                if first == 0x7F {
+                    if self.plain_buf.len() < 4 {
+                        return -1;
+                    }
+                    payload_len = ((self.plain_buf[1] as i64)
+                        | ((self.plain_buf[2] as i64) << 8)
+                        | ((self.plain_buf[3] as i64) << 16))
+                        * 4;
+                    header_len = 4;
+                } else {
+                    payload_len = (first as i64) * 4;
+                    header_len = 1;
+                }
+                if payload_len <= 0 {
+                    return 0;
+                }
+                let pkt_len = header_len + payload_len;
+                if (self.plain_buf.len() as i64) < pkt_len {
+                    return -1;
+                }
+                pkt_len
+            }
+            PROTO_INTERMEDIATE | PROTO_PADDED_INTERMEDIATE => {
+                if self.plain_buf.len() < 4 {
+                    return -1;
+                }
+                let payload_len =
+                    (LittleEndian::read_u32(&self.plain_buf[..4]) & 0x7FFFFFFF) as i64;
+                if payload_len <= 0 {
+                    return 0;
+                }
+                let pkt_len = 4 + payload_len;
+                if (self.plain_buf.len() as i64) < pkt_len {
+                    return -1;
+                }
+                pkt_len
+            }
+            _ => 0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// XOR mask (websocket frame masking) — оптимизированный вариант
+// ---------------------------------------------------------------------------
+
+pub fn xor_mask_in_place(data: &mut [u8], mask: &[u8]) {
+    let n = data.len();
+    if n == 0 || mask.len() < 4 {
+        return;
+    }
+    let mask8: u64 = (mask[0] as u64)
+        | ((mask[1] as u64) << 8)
+        | ((mask[2] as u64) << 16)
+        | ((mask[3] as u64) << 24)
+        | ((mask[0] as u64) << 32)
+        | ((mask[1] as u64) << 40)
+        | ((mask[2] as u64) << 48)
+        | ((mask[3] as u64) << 56);
+
+    let mut i = 0;
+    while i + 8 <= n {
+        let v = LittleEndian::read_u64(&data[i..]);
+        LittleEndian::write_u64(&mut data[i..], v ^ mask8);
+        i += 8;
+    }
+    while i < n {
+        data[i] ^= mask[i & 3];
+        i += 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RFC 6455 SHA-1 Sec-WebSocket-Accept calculation (FIPS 180-4)
+// ---------------------------------------------------------------------------
+
+pub fn sha1_digest(data: &[u8]) -> [u8; 20] {
+    let mut h0: u32 = 0x67452301;
+    let mut h1: u32 = 0xEFCDAB89;
+    let mut h2: u32 = 0x98BADCFE;
+    let mut h3: u32 = 0x10325476;
+    let mut h4: u32 = 0xC3D2E1F0;
+
+    let bit_len = (data.len() as u64) * 8;
+    let mut padded = Vec::with_capacity((data.len() + 72) & !63);
+    padded.extend_from_slice(data);
+    padded.push(0x80);
+    while (padded.len() % 64) != 56 {
+        padded.push(0);
+    }
+    let mut len_bytes = [0u8; 8];
+    BigEndian::write_u64(&mut len_bytes, bit_len);
+    padded.extend_from_slice(&len_bytes);
+
+    for chunk in padded.chunks_exact(64) {
+        let mut w = [0u32; 80];
+        for i in 0..16 {
+            w[i] = BigEndian::read_u32(&chunk[i * 4..i * 4 + 4]);
+        }
+        for i in 16..80 {
+            w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
+        }
+
+        let mut a = h0;
+        let mut b = h1;
+        let mut c = h2;
+        let mut d = h3;
+        let mut e = h4;
+
+        for (i, &wi) in w.iter().enumerate() {
+            let (f, k) = match i {
+                0..=19 => ((b & c) | ((!b) & d), 0x5A827999u32),
+                20..=39 => (b ^ c ^ d, 0x6ED9EBA1u32),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDCu32),
+                _ => (b ^ c ^ d, 0xCA62C1D6u32),
+            };
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(wi);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+
+        h0 = h0.wrapping_add(a);
+        h1 = h1.wrapping_add(b);
+        h2 = h2.wrapping_add(c);
+        h3 = h3.wrapping_add(d);
+        h4 = h4.wrapping_add(e);
+    }
+
+    let mut out = [0u8; 20];
+    BigEndian::write_u32(&mut out[0..4], h0);
+    BigEndian::write_u32(&mut out[4..8], h1);
+    BigEndian::write_u32(&mut out[8..12], h2);
+    BigEndian::write_u32(&mut out[12..16], h3);
+    BigEndian::write_u32(&mut out[16..20], h4);
+    out
+}
+
+pub fn websocket_accept_key(ws_key: &str) -> String {
+    use base64::Engine;
+    let mut input = Vec::with_capacity(ws_key.len() + 36);
+    input.extend_from_slice(ws_key.as_bytes());
+    input.extend_from_slice(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    let digest = sha1_digest(&input);
+    base64::engine::general_purpose::STANDARD.encode(digest)
+}
+
+#[allow(dead_code)]
+pub fn write_be_u16(buf: &mut [u8], v: u16) {
+    BigEndian::write_u16(buf, v);
+}
+#[allow(dead_code)]
+pub fn write_be_u64(buf: &mut [u8], v: u64) {
+    BigEndian::write_u64(buf, v);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splitter_disables_parsing_before_buffer_can_grow_without_bound() {
+        let init = [0u8; 64];
+        let mut splitter = MsgSplitter::new(&init, 0xEEEEEEEE).expect("splitter");
+
+        let first_len = MAX_SPLITTER_BUFFER / 2 + 1;
+        let mut plaintext = vec![0u8; first_len];
+        LittleEndian::write_u32(&mut plaintext[..4], (MAX_SPLITTER_BUFFER - 4) as u32);
+
+        let mut encryptor = Aes256Ctr::new(init[8..40].into(), init[40..56].into());
+        let mut skip = [0u8; 64];
+        encryptor.apply_keystream(&mut skip);
+        let mut ciphertext = plaintext;
+        encryptor.apply_keystream(&mut ciphertext);
+
+        assert!(splitter.split(&ciphertext).is_empty());
+        let overflow = vec![0x55; first_len];
+        let parts = splitter.split(&overflow);
+
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].len(), first_len * 2);
+        assert!(splitter.disabled);
+        assert!(splitter.cipher_buf.is_empty());
+        assert!(splitter.plain_buf.is_empty());
+    }
+
+    #[test]
+    fn rfc6455_websocket_accept_vector() {
+        assert_eq!(
+            websocket_accept_key("dGhlIHNhbXBsZSBub25jZQ=="),
+            "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        );
+    }
+}
