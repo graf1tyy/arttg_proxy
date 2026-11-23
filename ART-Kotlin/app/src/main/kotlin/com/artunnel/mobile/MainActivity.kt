@@ -69,7 +69,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(22), dp(28), dp(22), dp(30))
         }
-        scroll.addView(root, ScrollView.LayoutParams(
+        scroll.addView(root, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
@@ -81,8 +81,7 @@ class MainActivity : Activity() {
         })
         root.addView(space(12))
         root.addView(label(
-            "Автоматический подбор
-лучшего прокси Telegram",
+            "Автоматический подбор\\nлучшего прокси Telegram",
             23f,
             Color.rgb(239, 243, 249),
             bold = true,
