@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -23,46 +24,73 @@ def _read_latest_stats() -> dict[str, str]:
     return {}
 
 
-def _set_no_secure(config) -> None:
-    """Prefer HTTP/CF port 80 fallback for networks that reset CF TLS."""
-    for name in ("no_secure", "disable_secure"):
-        if hasattr(config, name):
-            try:
-                setattr(config, name, True)
-            except Exception:
-                pass
-
-
 def _fix_window_controls(window) -> None:
-    """Restore visible native-style minimize/maximize/close glyphs."""
+    """Make the existing frameless title-bar buttons visibly glyph-based."""
     try:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QToolButton
+        from PySide6.QtWidgets import QAbstractButton
 
-        buttons = []
-        for b in window.findChildren(QToolButton):
+        candidates = []
+        width = max(300, window.width())
+        for b in window.findChildren(QAbstractButton):
             g = b.geometry()
-            if g.width() >= 20 and g.height() >= 20 and g.top() < 70:
-                buttons.append(b)
-        buttons.sort(key=lambda b: b.geometry().x())
-        if len(buttons) >= 3:
-            glyphs = ("—", "□", "×")
-            for b, glyph in zip(buttons[-3:], glyphs):
+            if g.width() < 18 or g.height() < 18:
+                continue
+            if g.y() > 72 or g.x() < max(0, width - 240):
+                continue
+            candidates.append(b)
+
+        # The right-most three title-bar buttons are minimize/maximize/close.
+        candidates.sort(key=lambda b: b.geometry().x())
+        if len(candidates) >= 3:
+            buttons = candidates[-3:]
+            glyphs = ("−", "□", "×")
+            tips = ("Свернуть", "Развернуть", "Закрыть")
+            for b, glyph, tip in zip(buttons, glyphs, tips):
+                try:
+                    b.setIcon(b.style().standardIcon(
+                        b.style().SP_TitleBarMinButton if glyph == "−"
+                        else b.style().SP_TitleBarMaxButton if glyph == "□"
+                        else b.style().SP_TitleBarCloseButton
+                    ))
+                except Exception:
+                    pass
+                # Keep text as a guaranteed fallback if the icon is blank/missing.
                 b.setText(glyph)
                 b.setToolButtonStyle(Qt.ToolButtonTextOnly)
-                b.setMinimumSize(36, 30)
+                b.setMinimumSize(40, 32)
+                b.setMaximumHeight(36)
                 b.setStyleSheet(
-                    "QToolButton { border: 0; background: transparent; "
-                    "font-size: 18px; font-weight: 500; padding: 0; }"
-                    "QToolButton:hover { background: rgba(255,255,255,0.08); }"
+                    "QAbstractButton { border: 0; background: transparent; "
+                    "color: #ffffff; font-size: 18px; font-weight: 500; "
+                    "padding: 0; margin: 0; }"
+                    "QAbstractButton:hover { background: rgba(255,255,255,0.10); }"
                 )
-                b.setToolTip({"—": "Свернуть", "□": "Развернуть", "×": "Закрыть"}[glyph])
+                b.setToolTip(tip)
+                b.setAccessibleName(tip)
     except Exception:
         pass
 
 
+def _tune_engine_config(config) -> None:
+    """Prefer WS for media and use plaintext CF fallback where TLS is blocked."""
+    for name, value in (
+        ("h2_enabled", False),
+        ("cfproxy_h2_media", False),
+        ("no_h2", True),
+        ("disable_secure", True),
+        ("no_secure", True),
+        ("pool_size", 8),
+    ):
+        if hasattr(config, name):
+            try:
+                setattr(config, name, value)
+            except Exception:
+                pass
+
+
 def install_ui_patch() -> None:
-    """Fix live dashboard telemetry, title-bar controls and CF fallback defaults."""
+    """ART runtime UI/transport patch."""
     try:
         from art.ui import MainWindow
     except Exception:
@@ -78,7 +106,7 @@ def install_ui_patch() -> None:
     def init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         try:
-            _set_no_secure(self.config)
+            _tune_engine_config(self.config)
         except Exception:
             pass
         _fix_window_controls(self)
