@@ -86,7 +86,10 @@ class ArtProxyService : Service() {
     override fun onDestroy() {
         runCatching { NativeProxy.stop() }
         worker.shutdownNow()
-        saveState(starting = false, running = false, error = "")
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_STARTING, false)
+            .putBoolean(KEY_RUNNING, false)
+            .apply()
         super.onDestroy()
     }
 

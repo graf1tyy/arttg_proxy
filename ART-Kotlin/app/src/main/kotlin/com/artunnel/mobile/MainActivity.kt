@@ -15,6 +15,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -66,6 +67,13 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(22), dp(22), dp(22), dp(28))
+        }
+        if (Build.VERSION.SDK_INT >= 35) {
+            scroll.setOnApplyWindowInsetsListener { _, windowInsets ->
+                val bars = windowInsets.getInsets(WindowInsets.Type.systemBars())
+                root.setPadding(dp(22), dp(22) + bars.top, dp(22), dp(28) + bars.bottom)
+                windowInsets
+            }
         }
         scroll.addView(root, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -272,11 +280,11 @@ class MainActivity : Activity() {
 
         when {
             running -> {
-                statusPill.text = "●  ПОДКЛЮЧЕНО"
+                statusPill.text = "●  МОСТ АКТИВЕН"
                 statusPill.setTextColor(SUCCESS)
                 statusPill.background = round(SUCCESS_BG, 30)
-                headline.text = "Маршрут активен"
-                description.text = "Локальный мост запущен. Теперь можно подключить Telegram."
+                headline.text = "Локальный мост активен"
+                description.text = "Прокси запущен. Подключи Telegram, чтобы открыть сетевой маршрут."
                 primaryButton.text = "ОСТАНОВИТЬ ART"
                 telegramButton.isEnabled = true
                 telegramButton.alpha = 1f
