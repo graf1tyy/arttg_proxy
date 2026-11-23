@@ -116,8 +116,20 @@ jobs:
           assert hasattr(window, "tray_check"), "Tray-close preference is missing"
           assert hasattr(window, "autostart_check"), "Windows autostart preference is missing"
           assert window.tray_check.isChecked(), "Close-to-tray should be enabled by default"
-          from art.startup import startup_command
+          from art.startup import startup_command, set_windows_autostart
           assert "--autostart" in startup_command(), "Windows startup command is missing its autostart flag"
+          set_windows_autostart(True)
+          set_windows_autostart(False)
+
+          from PySide6.QtWidgets import QSystemTrayIcon
+          if QSystemTrayIcon.isSystemTrayAvailable():
+              assert window.tray_icon is not None and window.tray_icon.isVisible(), "System tray icon did not appear"
+              window.close()
+              qt.processEvents()
+              assert not window.isVisible(), "Close should hide ART to the system tray"
+              window.restore_from_tray()
+              qt.processEvents()
+              assert window.isVisible(), "Tray activation did not restore the ART window"
 
           titlebar = window.findChild(QFrame, "titlebar")
           assert titlebar is not None, "Titlebar frame missing"
