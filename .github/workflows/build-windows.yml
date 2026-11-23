@@ -74,7 +74,7 @@ jobs:
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name ART --icon assets/art.ico --add-data 'assets;assets' --distpath dist --workpath build/gui --specpath build/gui app.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name ART --icon (Join-Path $PWD 'assets/art.ico') --add-data "$(Join-Path $PWD 'assets');assets" --distpath dist --workpath build/gui --specpath build/gui app.py
           if ($LASTEXITCODE -ne 0) { throw 'ART desktop PyInstaller build failed.' }
           New-Item -ItemType Directory -Force -Path dist/ART/engine | Out-Null
           Copy-Item build/engine-dist/ART-Engine.exe dist/ART/engine/ART-Engine.exe -Force
