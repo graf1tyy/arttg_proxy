@@ -204,7 +204,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub Release v2.0.2
+      - name: Attach ART.exe to GitHub Release v2.0.2
         if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.2') }}"
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
@@ -217,20 +217,27 @@ jobs:
             Accept = 'application/vnd.github+json'
             'X-GitHub-Api-Version' = '2022-11-28'
           }
-          $body = @{
-            tag_name = $version
-            target_commitish = 'main'
-            name = 'ART Desktop v2.0.2'
-            body = 'Единый portable EXE для Windows x64. Скачайте ART.exe и запустите двойным щелчком. Отдельная папка с движком и установка не нужны. Встроенный тест проверяет запуск MTProto-моста из ресурсов самого EXE.'
-            draft = $false
-            prerelease = $false
-          } | ConvertTo-Json
           $api = 'https://api.github.com/repos/graf1tyy/arttg_proxy/releases'
-          $release = Invoke-RestMethod -Uri $api -Method Post -Headers $headers -ContentType 'application/json' -Body $body
-          $uploadRoot = $release.upload_url -replace '\{\?name,label\}$', ''
+          $release = Invoke-RestMethod -Uri "$api/tags/$version" -Method Get -Headers $headers
+          $templatedUploadUrl = [string]$release.upload_url
+          $templateStart = $templatedUploadUrl.IndexOf('{')
+          if ($templateStart -lt 0) { throw "Release upload URL has no template marker: $templatedUploadUrl" }
+          $uploadRoot = $templatedUploadUrl.Substring(0, $templateStart)
           foreach ($assetPath in @('dist/ART.exe', 'dist/ART.exe.sha256')) {
-            $assetName = [uri]::EscapeDataString([IO.Path]::GetFileName($assetPath))
+            $assetFileName = [IO.Path]::GetFileName($assetPath)
+            $alreadyUploaded = @($release.assets | Where-Object { $_.name -eq $assetFileName }).Count -gt 0
+            if ($alreadyUploaded) {
+              Write-Host "Release asset already exists: $assetFileName"
+              continue
+            }
+            $assetName = [uri]::EscapeDataString($assetFileName)
             $uploadUri = "$uploadRoot?name=$assetName"
-            Invoke-WebRequest -Uri $uploadUri -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $assetPath | Out-Null
+            Invoke-WebRequest -Uri $uploadUri -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $assetPath -ErrorAction Stop | Out-Null
+            Write-Host "Uploaded release asset: $assetFileName"
           }
-          Write-Host "Published release: $($release.html_url)"
+          $verified = Invoke-RestMethod -Uri "$api/tags/$version" -Method Get -Headers $headers
+          $assetNames = @($verified.assets | ForEach-Object { $_.name })
+          if (($assetNames -notcontains 'ART.exe') -or ($assetNames -notcontains 'ART.exe.sha256')) {
+            throw "Release assets are incomplete: $($assetNames -join ', ')"
+          }
+          Write-Host "Release is ready: $($verified.html_url)"
