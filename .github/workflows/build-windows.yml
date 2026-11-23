@@ -50,11 +50,6 @@ jobs:
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         run: |
-          # The supplied engine log shows repeated CF-H2 HTTP 404/WinError 1236
-          # failures on media requests while the WS media pool successfully
-          # transfers hundreds of KB to >1 MB. Keep H2 available in the upstream
-          # package, but disable it for ART's packaged engine so media uses the
-          # proven WS/CF fallback path instead of the broken H2 lane.
           Copy-Item engine_entry.py engine_entry_original.py -Force
           @'
           import sys
