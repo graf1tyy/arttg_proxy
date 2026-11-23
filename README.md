@@ -23,7 +23,7 @@
 
 ```bash
 cd ART-Kotlin/native/tgwsproxy
-cargo ndk --platform 26 -t arm64-v8a -t armeabi-v7a -t x86_64 \\
+cargo ndk --platform 26 -t arm64-v8a -t armeabi-v7a -t x86_64 \
   -o ../../app/src/main/jniLibs build --release --locked
 
 cd ../..
