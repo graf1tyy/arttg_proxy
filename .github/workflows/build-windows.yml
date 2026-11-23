@@ -87,7 +87,7 @@ jobs:
         working-directory: source/ART-Desktop-v2.0.1
         run: python -m unittest discover -s tests -v
 
-      - name: Smoke test Qt interface and connection controls
+      - name: Smoke test Qt interface, connection and titlebar controls
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         run: |
@@ -95,7 +95,8 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'art-qt-smoke'
           @'
           import app as art_app  # installs the same runtime patch used by packaged ART.exe
-          from PySide6.QtWidgets import QApplication, QPushButton
+          from PySide6.QtCore import Qt
+          from PySide6.QtWidgets import QApplication, QPushButton, QFrame
           import art.ui as ui_module
           from art.ui import MainWindow
 
@@ -107,7 +108,16 @@ jobs:
           assert window.connect_btn.text() == "Подключить Telegram", window.connect_btn.text()
           assert not window.connect_btn.isHidden(), "Connect button is hidden"
           assert window.connect_btn.isEnabled(), "Connect button is disabled"
-          assert {"—", "□", "×"}.issubset({b.text() for b in window.findChildren(QPushButton)}), "Window controls missing"
+
+          titlebar = window.findChild(QFrame, "titlebar")
+          assert titlebar is not None, "Titlebar frame missing"
+          controls = titlebar.findChildren(QPushButton, options=Qt.FindChildOption.FindDirectChildrenOnly)
+          controls.sort(key=lambda button: button.geometry().x())
+          assert len(controls) == 3, f"Expected three direct titlebar buttons, got {len(controls)}"
+          assert [b.objectName() for b in controls] == ["window_minimize", "window_maximize", "window_close"]
+          assert all(b.text() == "" for b in controls), "Titlebar should use vector icons, not font glyphs"
+          assert all(not b.icon().isNull() for b in controls), "A titlebar icon is missing"
+          assert all(not b.isHidden() and b.isEnabled() for b in controls), "A titlebar button is not usable"
 
           starts = []
           window.start_engine = lambda: starts.append("start")
@@ -130,13 +140,30 @@ jobs:
           window.connect_btn.click()
           assert opened == ["open"], f"Active connect button did not open Telegram: {opened}"
 
-          window.engine_process = None
-          window.close()
+          minimized = []
+          controls[0].clicked.connect(lambda: minimized.append(True))
+          controls[0].click()
+          assert minimized and window.isMinimized(), "Minimize button action failed"
+          window.showNormal()
           qt.processEvents()
-          print("ART_QT_CONNECT_BUTTONS_OK")
+
+          controls[1].click()
+          qt.processEvents()
+          assert window.isMaximized(), "Maximize button action failed"
+          assert not controls[1].icon().isNull(), "Restore icon disappeared after maximize"
+          controls[1].click()
+          qt.processEvents()
+          assert not window.isMaximized(), "Restore button action failed"
+
+          closed = []
+          controls[2].clicked.connect(lambda: closed.append(True))
+          controls[2].click()
+          qt.processEvents()
+          assert closed and not window.isVisible(), "Close button action failed"
+          print("ART_QT_TITLEBAR_AND_CONNECT_CONTROLS_OK")
           '@ | Set-Content qt_connect_smoke.py -Encoding utf8
           python qt_connect_smoke.py
-          if ($LASTEXITCODE -ne 0) { throw 'Qt connection button regression test failed.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Qt titlebar or connection control regression test failed.' }
 
       - name: Build and smoke test headless engine
         shell: pwsh
