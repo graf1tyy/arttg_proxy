@@ -210,35 +210,24 @@ jobs:
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = 'v2.0.2'
-          $headers = @{
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $api = 'https://api.github.com/repos/graf1tyy/arttg_proxy/releases'
-          $release = Invoke-RestMethod -Uri "$api/tags/$version" -Method Get -Headers $headers
-          $templatedUploadUrl = [string]$release.upload_url
-          $templateStart = $templatedUploadUrl.IndexOf('{')
-          if ($templateStart -lt 0) { throw "Release upload URL has no template marker: $templatedUploadUrl" }
-          $uploadRoot = $templatedUploadUrl.Substring(0, $templateStart)
-          foreach ($assetPath in @('dist/ART.exe', 'dist/ART.exe.sha256')) {
-            $assetFileName = [IO.Path]::GetFileName($assetPath)
-            $alreadyUploaded = @($release.assets | Where-Object { $_.name -eq $assetFileName }).Count -gt 0
-            if ($alreadyUploaded) {
-              Write-Host "Release asset already exists: $assetFileName"
+          $release = gh release view $version --repo $env:GITHUB_REPOSITORY --json url,assets | ConvertFrom-Json
+          $existing = @($release.assets | ForEach-Object { $_.name })
+          $assets = @('dist/ART.exe', 'dist/ART.exe.sha256')
+          foreach ($asset in $assets) {
+            $name = [IO.Path]::GetFileName($asset)
+            if ($existing -contains $name) {
+              Write-Host "Release asset already exists: $name"
               continue
             }
-            $assetName = [uri]::EscapeDataString($assetFileName)
-            $uploadUri = "$uploadRoot?name=$assetName"
-            Invoke-WebRequest -Uri $uploadUri -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $assetPath -ErrorAction Stop | Out-Null
-            Write-Host "Uploaded release asset: $assetFileName"
+            gh release upload $version $asset --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Could not upload release asset: $name" }
           }
-          $verified = Invoke-RestMethod -Uri "$api/tags/$version" -Method Get -Headers $headers
-          $assetNames = @($verified.assets | ForEach-Object { $_.name })
-          if (($assetNames -notcontains 'ART.exe') -or ($assetNames -notcontains 'ART.exe.sha256')) {
-            throw "Release assets are incomplete: $($assetNames -join ', ')"
+          $verified = gh release view $version --repo $env:GITHUB_REPOSITORY --json url,assets | ConvertFrom-Json
+          $verifiedNames = @($verified.assets | ForEach-Object { $_.name })
+          if (($verifiedNames -notcontains 'ART.exe') -or ($verifiedNames -notcontains 'ART.exe.sha256')) {
+            throw "Release assets are incomplete: $($verifiedNames -join ', ')"
           }
-          Write-Host "Release is ready: $($verified.html_url)"
+          Write-Host "Release is ready: $($verified.url)"
