@@ -1,5 +1,6 @@
 name: Build ART for Windows
 # Build trigger: main
+# Release is published by a commit titled: release: ART Desktop v2.0.2
 
 on:
   workflow_dispatch:
@@ -220,7 +221,7 @@ jobs:
             tag_name = $version
             target_commitish = 'main'
             name = 'ART Desktop v2.0.2'
-            body = "Единый portable EXE для Windows x64.\n\nСкачайте ART.exe и запустите двойным щелчком. Отдельная папка с движком и установка не нужны.\n\nВстроенный тест проверяет, что MTProto-мост запускается из ресурсов самого EXE."
+            body = 'Единый portable EXE для Windows x64. Скачайте ART.exe и запустите двойным щелчком. Отдельная папка с движком и установка не нужны. Встроенный тест проверяет запуск MTProto-моста из ресурсов самого EXE.'
             draft = $false
             prerelease = $false
           } | ConvertTo-Json
