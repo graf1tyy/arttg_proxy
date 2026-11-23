@@ -28,7 +28,14 @@ jobs:
           Expand-Archive -Path 'ART-Desktop-v2.0.1-source.zip' -DestinationPath source -Force
           if (!(Test-Path 'source/ART-Desktop-v2.0.1/app.py')) { throw 'Source archive layout is invalid.' }
           Copy-Item 'ART-Desktop-v2.0.1/art/ui_patch.py' 'source/ART-Desktop-v2.0.1/art/ui_patch.py' -Force
-          Add-Content 'source/ART-Desktop-v2.0.1/app.py' "`nfrom art.ui_patch import install_ui_patch`ninstall_ui_patch()`n"
+          $appPath = 'source/ART-Desktop-v2.0.1/app.py'
+          $appSource = Get-Content $appPath -Raw
+          $anchor = 'from art.ui import MainWindow'
+          if (!$appSource.Contains('install_ui_patch()')) {
+            if (!$appSource.Contains($anchor)) { throw 'Could not locate the ART GUI import for runtime patch installation.' }
+            $appSource = $appSource.Replace($anchor, "$anchor`nfrom art.ui_patch import install_ui_patch`ninstall_ui_patch()")
+            Set-Content -Path $appPath -Value $appSource -Encoding utf8 -NoNewline
+          }
 
       - name: Set up Python
         uses: actions/setup-python@v5
