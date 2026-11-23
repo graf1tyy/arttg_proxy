@@ -239,7 +239,12 @@ def install_ui_patch() -> None:
 
     def stop_engine(self):
         proc = getattr(self, "engine_process", None)
-        _kill_engine_tree(proc)
+        if proc is not None:
+            try:
+                from art.engine import terminate_engine_process
+                terminate_engine_process(proc)
+            except Exception:
+                _kill_engine_tree(proc)
         return original_stop_engine(self)
 
     def apply_state(self, online, headline=None, detail=None):
