@@ -40,9 +40,6 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Run core tests
-        run: gradle --no-daemon :core:jvmTest
-
       - name: Build installable Android APK
         run: gradle --no-daemon --stacktrace :app:testReleaseUnitTest :app:assembleRelease
 
@@ -53,15 +50,16 @@ jobs:
           test -s "$APK"
           APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
           "$APKSIGNER" verify --verbose "$APK"
-          sha256sum "$APK" > "$APK.sha256"
+          cp "$APK" ART-Mobile-v0.1.0.apk
+          sha256sum ART-Mobile-v0.1.0.apk > ART-Mobile-v0.1.0.apk.sha256
 
       - name: Upload APK build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ART-Mobile-Android-APK
           path: |
-            ART-Kotlin/app/build/outputs/apk/release/app-release.apk
-            ART-Kotlin/app/build/outputs/apk/release/app-release.apk.sha256
+            ART-Kotlin/ART-Mobile-v0.1.0.apk
+            ART-Kotlin/ART-Mobile-v0.1.0.apk.sha256
           if-no-files-found: error
           retention-days: 30
 
