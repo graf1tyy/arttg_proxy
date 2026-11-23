@@ -91,26 +91,25 @@ smoke_function = '''def _bundle_smoke_test() -> int:
         return 45
     finally:
         if process is not None:
-            if process.poll() is None:
-                try:
-                    process.terminate()
-                except OSError:
-                    pass
+            if os.name == "nt":
+                # PyInstaller one-file bootloaders can spawn an inner process.
+                # Kill the complete process tree, not only the outer stub.
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=8,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+                )
+            elif process.poll() is None:
+                process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                if os.name == "nt":
-                    subprocess.run(
-                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
-                    )
-                else:
-                    process.kill()
-                    process.wait(timeout=3)
+                process.kill()
+                process.wait(timeout=3)
 
 
 '''
