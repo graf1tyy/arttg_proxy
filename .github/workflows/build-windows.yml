@@ -69,13 +69,18 @@ jobs:
 
           from proxy.tg_ws_proxy import main
 
-          raw_args = sys.stdin.read()
-          try:
-              args = json.loads(raw_args)
-              if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
-                  raise ValueError("ART engine configuration must be a JSON list of strings")
-          except Exception as exc:
-              raise SystemExit(f"Invalid ART Engine configuration: {exc}")
+          if len(sys.argv) > 1:
+              # CLI arguments are used by the CI smoke test (e.g. --help).
+              args = sys.argv[1:]
+          else:
+              # The ART desktop app sends its runtime configuration over stdin.
+              raw_args = sys.stdin.read().strip()
+              try:
+                  args = json.loads(raw_args)
+                  if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+                      raise ValueError("ART engine configuration must be a JSON list of strings")
+              except Exception as exc:
+                  raise SystemExit(f"Invalid ART Engine configuration: {exc}")
 
           if "--no-h2" not in args:
               args.append("--no-h2")
