@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 _STATS_RE = re.compile(r"stats:\s+(?P<body>.+)$")
@@ -24,13 +26,52 @@ def _read_latest_stats() -> dict[str, str]:
 
 
 def _set_no_secure(config) -> None:
-    """Prefer HTTP/CF port 80 fallback for networks that reset CF TLS."""
-    for name in ("no_secure", "disable_secure"):
-        if hasattr(config, name):
-            try:
-                setattr(config, name, True)
-            except Exception:
-                pass
+    """Prefer the upstream's port-80 CF fallback on networks resetting TLS/443."""
+    try:
+        setattr(config, "_art_force_no_secure", True)
+    except Exception:
+        pass
+
+
+def _kill_engine_tree(proc) -> None:
+    """Stop the PyInstaller engine and all descendants on Windows."""
+    if proc is None or proc.poll() is not None or os.name != "nt":
+        return
+    try:
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 0
+        subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=8,
+            startupinfo=startup,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def _current_start_reports_listener(window, host: str, port: int) -> bool:
+    """Use the engine's flushed bind-success line as a fallback readiness signal."""
+    try:
+        proc = getattr(window, "engine_process", None)
+        if proc is None or proc.poll() is not None:
+            return False
+        log_path = Path(__import__("art.config", fromlist=["app_data_dir"]).app_data_dir()) / "engine.log"
+        raw = log_path.read_text(encoding="utf-8", errors="replace")
+        offset = int(getattr(window, "_art_engine_log_offset", 0))
+        tail = raw[offset:]
+        pattern = re.compile(
+            rf"Listening on\\s+{re.escape(host)}:{int(port)}(?:\\s|$)",
+            re.IGNORECASE,
+        )
+        return any(pattern.search(line) for line in tail.splitlines())
+    except Exception:
+        return False
 
 
 def _fix_window_controls(window) -> None:
@@ -123,14 +164,71 @@ def install_ui_patch() -> None:
     original_init = MainWindow.__init__
     original_apply_state = MainWindow._apply_state
     original_poll_engine = MainWindow._poll_engine
+    original_start_engine = MainWindow.start_engine
+    original_stop_engine = MainWindow.stop_engine
+
+    # Patch the engine argument builder at its defining module: start_engine()
+    # resolves this global when it builds the one-shot stdin configuration.
+    try:
+        import art.engine as engine_module
+        original_build_args = engine_module.build_engine_args
+        if not getattr(engine_module, "_art_no_secure_patch", False):
+            def build_args(config, log_path):
+                args = original_build_args(config, log_path)
+                if getattr(config, "_art_force_no_secure", False) and "--no-secure" not in args:
+                    args.append("--no-secure")
+                return args
+            engine_module.build_engine_args = build_args
+            engine_module._art_no_secure_patch = True
+    except Exception:
+        pass
+
+    # The socket probe can be transiently missed on Windows while the
+    # PyInstaller one-file child is starting. Trust the current process's
+    # explicit "Listening on host:port" log only for this launch.
+    try:
+        import art.ui as ui_module
+        original_listener_probe = ui_module.is_local_listener
+        if not getattr(ui_module, "_art_listener_probe_patch", False):
+            def listener_probe(host, port, timeout=0.35):
+                if original_listener_probe(host, port, timeout):
+                    return True
+                try:
+                    window = getattr(ui_module, "_art_active_window", None)
+                    if window is not None and _current_start_reports_listener(window, host, port):
+                        return True
+                except Exception:
+                    pass
+                return False
+            ui_module.is_local_listener = listener_probe
+            ui_module._art_listener_probe_patch = True
+    except Exception:
+        pass
 
     def init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         try:
             _set_no_secure(self.config)
+            import art.ui as ui_module
+            ui_module._art_active_window = self
         except Exception:
             pass
+        self._art_engine_log_offset = 0
         _fix_window_controls(self)
+
+    def start_engine(self):
+        try:
+            from art.config import app_data_dir
+            path = app_data_dir() / "engine.log"
+            self._art_engine_log_offset = len(path.read_text(encoding="utf-8", errors="replace")) if path.exists() else 0
+        except Exception:
+            self._art_engine_log_offset = 0
+        return original_start_engine(self)
+
+    def stop_engine(self):
+        proc = getattr(self, "engine_process", None)
+        _kill_engine_tree(proc)
+        return original_stop_engine(self)
 
     def apply_state(self, online, headline=None, detail=None):
         original_apply_state(self, online, headline, detail)
@@ -185,6 +283,8 @@ def install_ui_patch() -> None:
             pass
 
     MainWindow.__init__ = init
+    MainWindow.start_engine = start_engine
+    MainWindow.stop_engine = stop_engine
     MainWindow._apply_state = apply_state
     MainWindow._poll_engine = poll_engine
     MainWindow._art_runtime_patch = True
