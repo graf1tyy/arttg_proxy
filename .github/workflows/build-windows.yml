@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - 'ART-Desktop-v2.0.1-source.zip'
-      - 'ART-Desktop-v2.0.1-source.zip.sha256'
 
 permissions:
   contents: read
