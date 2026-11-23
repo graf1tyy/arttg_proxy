@@ -166,6 +166,7 @@ jobs:
           assert not window.isMaximized(), "Restore button action failed"
 
           closed = []
+          window.engine_process = None  # test the close lifecycle without a fake child process
           window._force_quit = True  # emulate explicit Exit from the tray menu
           controls[2].clicked.connect(lambda: closed.append(True))
           controls[2].click()
