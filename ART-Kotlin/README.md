@@ -1,26 +1,27 @@
-# ART Kotlin core
+# ART Mobile
 
-The Kotlin migration starts as a shared, platform-neutral core. It does not replace the working Windows transport engine yet.
+ART Mobile is the first Android client built around the shared ART Kotlin core.
 
-## Current scope
+## First preview scope
 
-- Common Kotlin models and validated ART settings.
-- MTProto link/plain-text feed parsing.
-- Proxy deduplication across sources.
-- Conservative automatic eligibility: a proxy with unknown sponsor status is not treated as clean.
-- Ranking that values media success and throughput much more than raw ping.
-- Shared tests executed on every change through GitHub Actions.
+- Downloads the maintained `best.txt` and `stable.txt` MTProto feeds.
+- Parses and deduplicates Telegram proxy links using the shared Kotlin core.
+- Enriches candidates from the upstream `endpoints.json` metadata, including sponsor status, success rate and RTT.
+- Performs a bounded TCP reachability check against the feed's published proxy endpoints.
+- Excludes proxies whose metadata explicitly reports a sponsor channel.
+- Keeps unknown ad-check status visible as a warning; unknown is not shown as clean.
+- Opens the selected `tg://proxy` link in Telegram. Telegram asks the user to add/enable that proxy.
 
-## Architecture boundary
+## Current limitation
 
-The core deliberately does not own HTTP networking, registry access, Windows tray integration, Android foreground services, or VPN/TUN permissions. Those are platform adapters. The same candidate, catalogue, and ranking rules will be consumed by the Android app and the Windows shell after the core is proven.
+This preview does **not** create an Android system VPN and does not route TikTok or every phone app. It hands an MTProto proxy to Telegram. A separate Android `VpnService` plus an Android-native transport engine is required before ART can act as a system-wide VPN.
+
+Public proxies are third-party infrastructure. They can observe connection metadata and may stop working without notice. Use only if you accept that risk.
 
 ## Build
 
-Requires JDK 17 and Gradle 9.2.1 or compatible.
+Requires JDK 17, Android SDK 36 and Gradle 8.13.
 
 ```sh
-gradle --no-daemon :core:jvmTest
+gradle --no-daemon :app:assembleRelease
 ```
-
-Kotlin Multiplatform plugin: 2.4.21.

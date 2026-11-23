@@ -1,0 +1,80 @@
+name: ART Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ART-Kotlin/**"
+      - ".github/workflows/android-release.yml"
+  pull_request:
+    paths:
+      - "ART-Kotlin/**"
+      - ".github/workflows/android-release.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: art-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: ART-Kotlin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Run core tests
+        run: gradle --no-daemon :core:jvmTest
+
+      - name: Build installable Android APK
+        run: gradle --no-daemon --stacktrace :app:testReleaseUnitTest :app:assembleRelease
+
+      - name: Verify APK exists and is signed
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          "$APKSIGNER" verify --verbose "$APK"
+          sha256sum "$APK" > "$APK.sha256"
+
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ART-Mobile-Android-APK
+          path: |
+            ART-Kotlin/app/build/outputs/apk/release/app-release.apk
+            ART-Kotlin/app/build/outputs/apk/release/app-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish ART Mobile preview release
+        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Mobile v0.1.0') }}"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="mobile-v0.1.0"
+          APK="ART-Kotlin/app/build/outputs/apk/release/app-release.apk"
+          CHECKSUM="$APK.sha256"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||             gh release create "$TAG" "$APK" "$CHECKSUM"               --repo "$GITHUB_REPOSITORY"               --title "ART Mobile v0.1.0 (Android preview)"               --prerelease               --notes "Первая Android preview-сборка. Автоматически загружает и проверяет публичные MTProto-прокси, исключает явно рекламные прокси и передаёт выбранный сервер в Telegram. Это не системный VPN: другие приложения телефона пока не туннелируются."
+          gh release upload "$TAG" "$APK" "$CHECKSUM" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets

@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ART-Kotlin"
 include(":core")
+include(":app")

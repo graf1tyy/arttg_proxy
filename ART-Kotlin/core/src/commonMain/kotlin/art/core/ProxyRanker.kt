@@ -35,12 +35,27 @@ object ProxyRanker {
     }
 
     fun rank(candidates: Iterable<ProxyCandidate>): List<RankedProxy> =
+        rankMatching(candidates) { it.eligibleForAutomaticSelection }
+
+    /**
+     * Excludes explicitly ad-tagged proxies but allows UNKNOWN results with a
+     * visible warning in the UI. This is useful when feed maintainers do not
+     * run the optional, account-backed Telegram ad-check for every endpoint.
+     */
+    fun rankExcludingDetectedSponsor(candidates: Iterable<ProxyCandidate>): List<RankedProxy> =
+        rankMatching(candidates) { it.eligibleWithSponsorWarning }
+
+    private fun rankMatching(
+        candidates: Iterable<ProxyCandidate>,
+        eligible: (ProxyCandidate) -> Boolean,
+    ): List<RankedProxy> =
         candidates.asSequence()
-            .filter { it.eligibleForAutomaticSelection }
+            .filter(eligible)
             .map { RankedProxy(it.normalised(), score(it)) }
             .sortedWith(
                 compareByDescending<RankedProxy> { it.score }
                     .thenByDescending { it.candidate.mediaSuccessRate ?: 0.0 }
+                    .thenByDescending { it.candidate.requestSuccessRate ?: 0.0 }
                     .thenByDescending { it.candidate.throughputKibPerSecond ?: 0.0 }
                     .thenBy { it.candidate.latencyMs ?: Double.MAX_VALUE }
                     .thenBy { it.candidate.key },

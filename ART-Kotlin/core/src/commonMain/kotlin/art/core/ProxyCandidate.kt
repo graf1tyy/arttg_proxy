@@ -63,14 +63,27 @@ data class ProxyCandidate(
         fraction.coerceIn(0.0, 1.0)
     }
 
-    /** Strict on purpose: unknown sponsor status is not proof of a clean proxy. */
-    val eligibleForAutomaticSelection: Boolean
+    private val hasPositiveRouteEvidence: Boolean
         get() {
-            if (!isStructurallyValid || sponsorStatus != SponsorStatus.NONE) return false
             val requestRate = rateOrNull(requestSuccessRate) ?: 0.0
             val mediaRate = rateOrNull(mediaSuccessRate) ?: 0.0
             val hasConnectivityEvidence = tcpReachable || requestRate > 0.0 || mediaRate > 0.0
             val hasVerificationEvidence = sourceVerified || tcpReachable || mediaRate > 0.0
             return hasConnectivityEvidence && hasVerificationEvidence
         }
+
+    /** Strict path: only explicitly confirmed sponsor-free candidates are eligible. */
+    val eligibleForAutomaticSelection: Boolean
+        get() = isStructurallyValid &&
+            sponsorStatus == SponsorStatus.NONE &&
+            hasPositiveRouteEvidence
+
+    /**
+     * Fallback path for feeds whose ad-check is unknown.
+     * Detected sponsor proxies remain excluded; UNKNOWN is never presented as clean.
+     */
+    val eligibleWithSponsorWarning: Boolean
+        get() = isStructurallyValid &&
+            sponsorStatus != SponsorStatus.PRESENT &&
+            hasPositiveRouteEvidence
 }
