@@ -81,6 +81,14 @@ arttg_proxy/
 └── README.md
 ```
 
+## Команда разработки
+
+- **art ([@graf1tyy](https://github.com/graf1tyy))** — автор и владелец проекта, направление разработки и финальные решения.
+- **ChatGPT (OpenAI)** — AI-помощник разработки: архитектура, реализация, отладка, сборка и документация.
+- **Claude (Anthropic)** — AI-помощник разработки.
+
+*ChatGPT и Claude указаны в благодарностях проекта как AI-assisted contributors, а не как отдельные GitHub-аккаунты.*
+
 ## Исходники и лицензии
 
 - Android transport core основан на [TgwsProxyAndroid](https://github.com/wqeww0001/TgwsProxyAndroid).
