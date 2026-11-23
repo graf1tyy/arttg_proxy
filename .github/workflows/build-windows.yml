@@ -113,6 +113,11 @@ jobs:
           assert window.connect_btn.text() == "Подключить Telegram", window.connect_btn.text()
           assert not window.connect_btn.isHidden(), "Connect button is hidden"
           assert window.connect_btn.isEnabled(), "Connect button is disabled"
+          assert hasattr(window, "tray_check"), "Tray-close preference is missing"
+          assert hasattr(window, "autostart_check"), "Windows autostart preference is missing"
+          assert window.tray_check.isChecked(), "Close-to-tray should be enabled by default"
+          from art.startup import startup_command
+          assert "--autostart" in startup_command(), "Windows startup command is missing its autostart flag"
 
           titlebar = window.findChild(QFrame, "titlebar")
           assert titlebar is not None, "Titlebar frame missing"
@@ -161,6 +166,7 @@ jobs:
           assert not window.isMaximized(), "Restore button action failed"
 
           closed = []
+          window._force_quit = True  # emulate explicit Exit from the tray menu
           controls[2].clicked.connect(lambda: closed.append(True))
           controls[2].click()
           qt.processEvents()
@@ -205,18 +211,22 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach ART.exe to GitHub Release v2.0.2
-        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.2') }}"
+      - name: Publish ART Desktop v2.0.3 Release
+        if: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: ART Desktop v2.0.3') }}"
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = 'v2.0.2'
+          $version = 'v2.0.3'
+          gh release view $version --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $version --repo $env:GITHUB_REPOSITORY --title 'ART Desktop v2.0.3' --notes 'Единый ART.exe для Windows x64. Добавлены сворачивание в системный трей, автозапуск с Windows в фоне и надёжное завершение дерева процессов движка. Крестик скрывает окно в трей; пункт «Выход» завершает программу и локальный мост.'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create GitHub release v2.0.3.' }
+          }
           $release = gh release view $version --repo $env:GITHUB_REPOSITORY --json url,assets | ConvertFrom-Json
           $existing = @($release.assets | ForEach-Object { $_.name })
-          $assets = @('dist/ART.exe', 'dist/ART.exe.sha256')
-          foreach ($asset in $assets) {
+          foreach ($asset in @('dist/ART.exe', 'dist/ART.exe.sha256')) {
             $name = [IO.Path]::GetFileName($asset)
             if ($existing -contains $name) {
               Write-Host "Release asset already exists: $name"
