@@ -74,83 +74,6 @@ def _current_start_reports_listener(window, host: str, port: int) -> bool:
         return False
 
 
-def _fix_window_controls(window) -> None:
-    """Make custom title-bar controls visibly show — / □ / × without replacing their actions."""
-    try:
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QAbstractButton
-
-        all_buttons = list(window.findChildren(QAbstractButton))
-        if not all_buttons:
-            return
-
-        def area(b):
-            g = b.geometry()
-            return g.width() * g.height()
-
-        def top_button(b):
-            g = b.geometry()
-            return g.top() < max(96, int(window.height() * 0.12)) and g.width() >= 18 and g.height() >= 18
-
-        candidates = [b for b in all_buttons if top_button(b)]
-
-        # Prefer buttons whose object name / tooltip already identifies their window action.
-        named = []
-        for b in candidates:
-            s = " ".join([
-                str(b.objectName() or ""),
-                str(b.toolTip() or ""),
-                str(b.accessibleName() or ""),
-            ]).lower()
-            if any(k in s for k in ("minimiz", "maximiz", "restor", "close", "закры", "сверн", "развер")):
-                named.append(b)
-
-        def xkey(b):
-            return b.geometry().x()
-
-        named = sorted(named, key=xkey)
-        if len(named) >= 3:
-            chosen = named[-3:]
-        else:
-            # Frameless title bars commonly contain exactly three right-side buttons.
-            # Keep only the rightmost controls so unrelated top-left toolbar buttons are untouched.
-            chosen = sorted(candidates, key=xkey)[-3:] if len(candidates) >= 3 else []
-
-        if len(chosen) != 3:
-            return
-
-        glyphs = ("—", "□", "×")
-        tips = ("Свернуть", "Развернуть", "Закрыть")
-        for b, glyph, tip in zip(chosen, glyphs, tips):
-            b.setText(glyph)
-            try:
-                b.setIcon(b.style().standardIcon(
-                    b.style().SP_TitleBarMinButton if glyph == "—"
-                    else b.style().SP_TitleBarMaxButton if glyph == "□"
-                    else b.style().SP_TitleBarCloseButton
-                ))
-            except Exception:
-                # Text glyph is the reliable fallback for custom title bars.
-                pass
-            try:
-                b.setToolButtonStyle(Qt.ToolButtonTextOnly)
-            except Exception:
-                pass
-            b.setMinimumSize(36, 30)
-            b.setStyleSheet(
-                "QAbstractButton { border: 0; background: transparent; "
-                "color: #ffffff; font-size: 18px; font-weight: 500; "
-                "padding: 0; margin: 0; }"
-                "QAbstractButton:hover { background: rgba(255,255,255,0.08); }"
-            )
-            b.setToolTip(tip)
-            b.setAccessibleName(tip)
-            b.setVisible(True)
-            b.raise_()
-    except Exception:
-        pass
-
-
 def install_ui_patch() -> None:
     """Fix live dashboard telemetry, title-bar controls and CF fallback defaults."""
     try:
@@ -214,7 +137,6 @@ def install_ui_patch() -> None:
         except Exception:
             pass
         self._art_engine_log_offset = 0
-        _fix_window_controls(self)
 
     def start_engine(self):
         try:
@@ -232,20 +154,19 @@ def install_ui_patch() -> None:
 
     def apply_state(self, online, headline=None, detail=None):
         original_apply_state(self, online, headline, detail)
-        _fix_window_controls(self)
         if online:
+            self.connect_btn.setVisible(True)
+            self.connect_btn.setEnabled(True)
             self.hero_state.setText("Транспорт готов")
             self.hero_desc.setText(
                 "ART Engine запущен. Telegram использует локальный MTProto-мост, "
                 "а ART автоматически выбирает доступный транспорт."
             )
-            self.connect_btn.setVisible(False)
         else:
             self.connect_btn.setVisible(True)
 
     def poll_engine(self):
         original_poll_engine(self)
-        _fix_window_controls(self)
         stats = _read_latest_stats()
         if not stats:
             return
