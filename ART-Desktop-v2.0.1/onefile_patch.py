@@ -118,7 +118,6 @@ replace_once(
 )
 
 ui_file = ROOT / "art" / "ui.py"
-replace_once(ui_file, "ART DESKTOP 2.0.1", "ART DESKTOP 2.0.2")
 
 config_file = ROOT / "art" / "config.py"
 replace_once(
