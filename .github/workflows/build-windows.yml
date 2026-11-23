@@ -57,22 +57,32 @@ jobs:
         shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
         run: |
-          Copy-Item engine_entry.py engine_entry_original.py -Force
           @'
+          """ART Engine stdin-config entry point with safe transport defaults."""
+          import json
           import sys
-          from engine_entry_original import main
 
-          if __name__ == "__main__":
-              args = list(sys.argv[1:])
-              if "--no-h2" not in args:
-                  args.append("--no-h2")
-              if "--pool-size" not in args:
-                  args.extend(["--pool-size", "8"])
-              sys.argv = [sys.argv[0], *args]
-              main()
+          from proxy.tg_ws_proxy import main
+
+          raw_args = sys.stdin.read()
+          try:
+              args = json.loads(raw_args)
+              if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+                  raise ValueError("ART engine configuration must be a JSON list of strings")
+          except Exception as exc:
+              raise SystemExit(f"Invalid ART Engine configuration: {exc}")
+
+          if "--no-h2" not in args:
+              args.append("--no-h2")
+          if "--pool-size" not in args:
+              args.extend(["--pool-size", "8"])
+          if "--no-secure" not in args:
+              args.append("--no-secure")
+
+          sys.argv = [sys.argv[0], *args]
+          main()
           '@ | Set-Content engine_entry.py -Encoding utf8
-          python -m compileall -q app.py engine_entry.py engine_entry_original.py art tests
-
+          python -m compileall -q app.py engine_entry.py art tests
       - name: Run ART tests
         working-directory: source/ART-Desktop-v2.0.1
         run: python -m unittest discover -s tests -v
@@ -92,7 +102,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --console --name ART-Engine --distpath build/engine-dist --workpath build/engine --specpath build/engine engine_entry.py
           if ($LASTEXITCODE -ne 0) { throw 'ART Engine PyInstaller build failed.' }
-          & build/engine-dist/ART-Engine.exe --help
+          '[\"--help\"]' | & build/engine-dist/ART-Engine.exe
           if ($LASTEXITCODE -ne 0) { throw 'Packaged engine smoke test failed.' }
 
       - name: Build ART desktop app
