@@ -27,6 +27,8 @@ jobs:
           if ($expected -ne $actual) { throw "Source ZIP SHA-256 mismatch. Expected $expected, got $actual" }
           Expand-Archive -Path 'ART-Desktop-v2.0.1-source.zip' -DestinationPath source -Force
           if (!(Test-Path 'source/ART-Desktop-v2.0.1/app.py')) { throw 'Source archive layout is invalid.' }
+          Copy-Item 'ART-Desktop-v2.0.1/art/ui_patch.py' 'source/ART-Desktop-v2.0.1/art/ui_patch.py' -Force
+          Add-Content 'source/ART-Desktop-v2.0.1/app.py' "`nfrom art.ui_patch import install_ui_patch`ninstall_ui_patch()`n"
 
       - name: Set up Python
         uses: actions/setup-python@v5
