@@ -37,10 +37,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Android SDK and NDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
+
+      - name: Install Android platform and NDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null
           sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
