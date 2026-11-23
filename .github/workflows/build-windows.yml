@@ -46,9 +46,30 @@ jobs:
           git clone --depth 1 --branch v1.11.4 https://github.com/Flowseal/tg-ws-proxy.git vendor/tg-ws-proxy
           python -m pip install -e vendor/tg-ws-proxy
 
-      - name: Compile Python sources
+      - name: Tune media transport and compile
+        shell: pwsh
         working-directory: source/ART-Desktop-v2.0.1
-        run: python -m compileall -q app.py engine_entry.py art tests
+        run: |
+          # The supplied engine log shows repeated CF-H2 HTTP 404/WinError 1236
+          # failures on media requests while the WS media pool successfully
+          # transfers hundreds of KB to >1 MB. Keep H2 available in the upstream
+          # package, but disable it for ART's packaged engine so media uses the
+          # proven WS/CF fallback path instead of the broken H2 lane.
+          Copy-Item engine_entry.py engine_entry_original.py -Force
+          @'
+          import sys
+          from engine_entry_original import main
+
+          if __name__ == "__main__":
+              args = list(sys.argv[1:])
+              if "--no-h2" not in args:
+                  args.append("--no-h2")
+              if "--pool-size" not in args:
+                  args.extend(["--pool-size", "8"])
+              sys.argv = [sys.argv[0], *args]
+              main()
+          '@ | Set-Content engine_entry.py -Encoding utf8
+          python -m compileall -q app.py engine_entry.py engine_entry_original.py art tests
 
       - name: Run ART tests
         working-directory: source/ART-Desktop-v2.0.1
