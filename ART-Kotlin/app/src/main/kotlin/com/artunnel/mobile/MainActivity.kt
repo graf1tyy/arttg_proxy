@@ -273,7 +273,7 @@ class MainActivity : Activity() {
         }
         probePool.shutdownNow()
 
-        val ranked = ProxyRanker.rankExcludingDetectedSponsor(probed)
+        val ranked = ProxyRanker.rankExcludingDetectedSponsor(probed.filter { it.tcpReachable })
         val best = ranked.firstOrNull()
             ?: throw IllegalStateException("Нет серверов, прошедших актуальную проверку доступности.")
         return Selection(
